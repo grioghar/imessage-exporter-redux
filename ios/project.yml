@@ -1,0 +1,31 @@
+# XcodeGen spec for the iOS app. On a Mac with XcodeGen installed:
+#   cd ios && xcodegen generate && open iMessageExporter.xcodeproj
+# Then set your signing team in Xcode and run on a device or simulator.
+#
+# The app links the local SwiftPM package at the repo root (Package.swift),
+# which compiles the C++ engine + the C bridge it calls through.
+name: iMessageExporter
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "15.0"
+packages:
+  ImsgExporter:
+    path: ..
+targets:
+  iMessageExporter:
+    type: application
+    platform: iOS
+    sources:
+      - iMessageExporter
+    dependencies:
+      - package: ImsgExporter
+        product: ImsgExporter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.iMessageExporter
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: iMessage Exporter
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
