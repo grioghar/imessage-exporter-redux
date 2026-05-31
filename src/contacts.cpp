@@ -10,31 +10,13 @@
 #include <string>
 #include <vector>
 
+#include "imsg/sqlite_uri.hpp"
 #include "imsg/vcard.hpp"
 
 namespace fs = std::filesystem;
 
 namespace imsg {
 namespace {
-
-// Percent-encodes a path for a SQLite "file:" URI so a stray '?'/'#' in the
-// path can't inject query parameters and override the read-only flags.
-std::string uri_encode_path(const std::string& path) {
-    static const char* kHex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(path.size());
-    for (unsigned char c : path) {
-        if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~' ||
-            c == '/') {
-            out += static_cast<char>(c);
-        } else {
-            out += '%';
-            out += kHex[c >> 4];
-            out += kHex[c & 0x0F];
-        }
-    }
-    return out;
-}
 
 std::string column_text(sqlite3_stmt* stmt, int col) {
     const unsigned char* t = sqlite3_column_text(stmt, col);
@@ -70,13 +52,15 @@ void load_query(sqlite3* db, const char* sql, ContactBook& book) {
 }
 
 void load_one_db(const std::string& db_path, ContactBook& book) {
-    std::string uri = "file:" + uri_encode_path(db_path) + "?mode=ro&immutable=1";
+    std::string uri = sqlite_ro_uri(db_path);
     sqlite3* db = nullptr;
     if (sqlite3_open_v2(uri.c_str(), &db,
                         SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nullptr) != SQLITE_OK) {
         sqlite3_close(db);
         return;  // best-effort: skip databases we can't open
     }
+    // macOS Contacts schema (AddressBook-v22.abcddb): ZABCDRECORD + linked
+    // ZABCD{PHONENUMBER,EMAILADDRESS}.
     load_query(db,
                "SELECT p.ZFULLNUMBER, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION "
                "FROM ZABCDPHONENUMBER p JOIN ZABCDRECORD r ON p.ZOWNER = r.Z_PK",
@@ -84,6 +68,14 @@ void load_one_db(const std::string& db_path, ContactBook& book) {
     load_query(db,
                "SELECT e.ZADDRESS, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION "
                "FROM ZABCDEMAILADDRESS e JOIN ZABCDRECORD r ON e.ZOWNER = r.Z_PK",
+               book);
+    // iOS AddressBook.sqlitedb (as extracted from a device backup): ABPerson +
+    // ABMultiValue, where property 3 = phone and 4 = email. Whichever schema is
+    // absent simply fails to prepare and is skipped.
+    load_query(db,
+               "SELECT mv.value, p.First, p.Last, p.Organization "
+               "FROM ABMultiValue mv JOIN ABPerson p ON mv.record_id = p.ROWID "
+               "WHERE mv.property IN (3, 4)",
                book);
     sqlite3_close(db);
 }

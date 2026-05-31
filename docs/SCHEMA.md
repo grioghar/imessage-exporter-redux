@@ -92,6 +92,36 @@ group prefixes. (There is no web client for *messages* — iCloud.com has no
 Messages app — so message history still has to come from a synced `chat.db` or
 a device backup.)
 
+## Device backups (`--backup`)
+
+An iTunes/Finder (MobileSync) backup is an alternative source. Default roots:
+
+| Platform | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/MobileSync/Backup/<UDID>/` |
+| Windows | `%APPDATA%\Apple\MobileSync\Backup\<UDID>\` (also `Apple Computer`, `%USERPROFILE%\Apple`) |
+
+Modern backups (iOS 10+) contain a plaintext **`Manifest.db`** SQLite database
+with a `Files` table `(fileID, domain, relativePath, flags, file)`. The actual
+file contents are content-addressed blobs stored at
+`<backup>/<first-2-hex-of-fileID>/<fileID>`. `backup.cpp` opens `Manifest.db`,
+looks up a file by `(domain, relativePath)`, and copies the blob out:
+
+| File | domain | relativePath |
+| --- | --- | --- |
+| Messages | `HomeDomain` | `Library/SMS/sms.db` |
+| Contacts | `HomeDomain` | `Library/AddressBook/AddressBook.sqlitedb` |
+
+The extracted `sms.db` shares the macOS `chat.db` schema, so the normal reader
+handles it. The iOS `AddressBook.sqlitedb` uses the **older** `ABPerson` /
+`ABMultiValue` schema (not macOS `ZABCDRECORD`); `contacts.cpp` queries both, so
+either resolves. Extracted files go to a temp directory that is removed on exit.
+
+**Encrypted backups** are detected (their `Manifest.db` is itself encrypted, so
+it won't open as SQLite) and rejected with guidance — decryption (keybag/AES)
+isn't implemented, to avoid pulling in a crypto dependency. Attachment file
+copying (`--copy-attachments`) is not wired through backups yet.
+
 ## Schema differences across versions
 
 Column availability varies between macOS releases (e.g. `attributedBody` and

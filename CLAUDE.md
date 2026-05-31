@@ -41,6 +41,8 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   ├── contact_book.hpp # handle→name map (SQLite-free, in imsg_core)
 │   ├── vcard.hpp        # vCard (.vcf) parser → ContactBook (SQLite-free)
 │   ├── contacts.hpp     # AddressBook/.vcf loader → ContactBook (SQLite)
+│   ├── backup.hpp       # iTunes/Finder backup file extraction (SQLite)
+│   ├── sqlite_uri.hpp   # shared read-only "file:" URI builder (header-only)
 │   ├── exporters.hpp    # txt / json / html renderers (+ combined)
 │   ├── export_job.hpp   # ExportOptions + export_database()
 │   └── database.hpp     # read-only chat.db reader (SQLite)
@@ -134,11 +136,21 @@ The reader also adapts to schema differences across macOS versions via
 
 ## Known gaps / good next tasks
 
-- ⚠️ **Verify against a real macOS `chat.db`.** Only synthetic data has been
-  exercised so far; the `attributedBody` decoder and the Contacts/attachment
-  paths are the likely weak points. The Contacts schema (`ZABCDRECORD` /
-  `ZABCDPHONENUMBER` / `ZABCDEMAILADDRESS`) and the phone-matching heuristic
-  (last-10-digits) haven't been tried against real AddressBook data.
+- ⚠️ **Verify against real data.** Only synthetic data has been exercised; the
+  `attributedBody` decoder, Contacts schemas, and backup extraction are the
+  likely weak points. Unverified specifics: the macOS Contacts schema
+  (`ZABCDRECORD` etc.) and iOS Contacts schema (`ABPerson`/`ABMultiValue`,
+  property IDs 3=phone/4=email), the last-10-digits phone match, and the backup
+  `Manifest.db` layout / file blob bucketing.
+- **Encrypted backup support.** Decryption (keybag parse → PBKDF2 → AES key
+  unwrap → per-file AES-CBC) is not implemented; it would add a crypto
+  dependency (OpenSSL, or CommonCrypto on macOS) and needs real encrypted-backup
+  data to validate. Currently encrypted backups are detected and rejected.
+- **Attachments from backups.** `--copy-attachments` doesn't resolve files out
+  of a backup (they're blobs keyed by fileID in `Manifest.db`); only metadata
+  exports when sourcing from `--backup`.
+- **No direct iCloud pull.** No Messages API + E2E encryption rules it out;
+  Contacts could be pulled via CardDAV but isn't (vCard import covers that need).
 
 ## Done since v0.1.0
 
@@ -173,6 +185,15 @@ The reader also adapts to schema differences across macOS versions via
   route for iCloud contacts (iCloud.com → Contacts → Export vCard). There is no
   web/API path for *messages* (no Messages web app + E2E encryption), so message
   history must come from a synced `chat.db` or a device backup.
+- **Backup source** — `--backup <path|UDID|latest>` / `--list-backups` read from
+  an iTunes/Finder backup (`backup.cpp`): open the plaintext `Manifest.db`, look
+  up `sms.db` (and the device AddressBook when `--contacts`) by domain+path,
+  extract the content-addressed blob to a temp dir, then run the normal pipeline
+  on it. Encrypted backups are detected (Manifest.db won't open as SQLite) and
+  rejected. `contacts.cpp` learned the iOS `ABPerson`/`ABMultiValue` schema so
+  backup-extracted contacts resolve. Mac-sync route (the default `chat.db`) now
+  gives an actionable hint when the DB is missing. The read-only SQLite URI
+  builder was factored into the shared `sqlite_uri.hpp`.
 
   All four added options share an `ExportOptions` struct (export_job.hpp) rather
   than growing the `export_database` parameter list; the C ABI (`imsg_export`)
