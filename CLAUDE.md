@@ -217,9 +217,13 @@ Planned front-ends, all calling the same `export_database()` / bridge:
   runs off the UI thread via `QtConcurrent` with a `QFutureWatcher`, and the log
   pane is fed by a `set_log_sink` callback. macOS builds it as a `MACOSX_BUNDLE`
   named "iMessage Exporter.app". Gated on `find_package(Qt6)`; CI builds it on
-  Linux (`qt6-base-dev`). **Still TODO:** distributable bundles — macOS
-  codesign/notarize + .dmg, Windows installer, Linux AppImage — and a CI build
-  on the mac/Windows runners (only Linux compiles the GUI today).
+  Linux (`qt6-base-dev`). CI now compiles the GUI on macOS/Windows/Linux
+  (`jurplel/install-qt-action`; Windows gets SQLite via vcpkg). The `package`
+  workflow (`.github/workflows/package.yml`, manual / on `v*` tag) builds
+  bundles: macOS `.dmg` (macdeployqt), Windows zip (windeployqt), Linux
+  `.AppImage` (linuxdeploy). **Remaining (credential-gated):** code signing +
+  notarization on macOS (Apple Developer ID) and a Windows signing cert — the
+  bundles are unsigned until those secrets exist.
 - **iOS app** — SwiftUI screens over the existing SwiftPM/bridge target; export
   from the imported DB or a user-picked path (the app can't read the live DB —
   see docs/IOS.md). Needs Xcode; not buildable in this repo's CI.

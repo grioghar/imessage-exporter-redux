@@ -30,19 +30,40 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   gui:
-    name: desktop GUI (Qt, linux)
-    runs-on: ubuntu-latest
+    name: desktop GUI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install SQLite3 + Qt6
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev qt6-base-dev
+      - name: Install SQLite3 + GL (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev libgl1-mesa-dev
+
+      - name: Install SQLite3 (Windows, via vcpkg)
+        if: runner.os == 'Windows'
+        run: vcpkg install sqlite3:x64-windows
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          cache: true
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            EXTRA="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
 
       - name: Build GUI
-        run: cmake --build build --target imessage-exporter-gui
+        run: cmake --build build --config Release --target imessage-exporter-gui
 
   docker:
     name: docker image

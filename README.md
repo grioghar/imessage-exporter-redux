@@ -196,8 +196,21 @@ cmake --build build --target imessage-exporter-gui
 ```
 
 On macOS the build produces **`iMessage Exporter.app`** (double-clickable; drag
-to `/Applications`). Distributable bundles (signing/notarization on macOS, an
-installer on Windows) are not wired up yet — see CLAUDE.md.
+to `/Applications`). CI compiles the GUI on macOS, Windows, and Linux.
+
+### Packaged downloads
+
+The [`package`](.github/workflows/package.yml) workflow (run it from the Actions
+tab, or push a `v*` tag) builds self-contained bundles and uploads them as
+artifacts:
+
+- **macOS** — `iMessage Exporter.app` inside a `.dmg` (Qt bundled via `macdeployqt`).
+- **Windows** — a folder/zip with the `.exe` and its Qt + SQLite DLLs (`windeployqt`).
+- **Linux** — a single-file `.AppImage` (`linuxdeploy` + the Qt plugin).
+
+These are **unsigned**: macOS Gatekeeper and Windows SmartScreen will warn until
+code signing / notarization are configured (those need an Apple Developer ID and
+a Windows signing certificate — credentials this repo doesn't hold).
 
 ## Docker
 
