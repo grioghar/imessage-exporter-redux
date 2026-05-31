@@ -25,6 +25,7 @@
 #include <string>
 
 #include "imsg/backup.hpp"
+#include "imsg/database.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
 #include "imsg/time_util.hpp"
