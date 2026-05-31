@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1aa3ff"/>
+      <stop offset="100%" stop-color="#0a63ff"/>
+    </linearGradient>
+  </defs>
+  <!-- App-icon rounded-square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#bg)"/>
+  <!-- Speech bubble -->
+  <rect x="208" y="232" width="608" height="446" rx="118" ry="118" fill="#ffffff"/>
+  <!-- Bubble tail (bottom-left) -->
+  <path d="M338 648 L300 812 L468 664 Z" fill="#ffffff"/>
+  <!-- Export (download) arrow inside the bubble -->
+  <g fill="none" stroke="#0a63ff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="512" y1="362" x2="512" y2="542"/>
+    <polyline points="426,456 512,544 598,456"/>
+  </g>
+</svg>

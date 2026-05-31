@@ -67,9 +67,12 @@ MainWindow::MainWindow()
 
     // --- Source -------------------------------------------------------------
     source_ = new QComboBox;
-    source_->addItem("Auto-detect Messages on this Mac");
-    source_->addItem("Database file (chat.db / sms.db)…");
-    source_->addItem("Device backup…");
+#if defined(Q_OS_MACOS)
+    // Auto-detecting ~/Library/Messages/chat.db only makes sense on a Mac.
+    source_->addItem("Auto-detect Messages on this Mac", SrcAuto);
+#endif
+    source_->addItem("Database file (chat.db / sms.db)…", SrcFile);
+    source_->addItem("Device backup…", SrcBackup);
     form->addRow("Source:", source_);
 
     auto* dbRow = new QHBoxLayout;
@@ -215,7 +218,7 @@ MainWindow::MainWindow()
 }
 
 void MainWindow::onSourceChanged() {
-    const int s = source_->currentIndex();
+    const int s = source_->currentData().toInt();
     const bool file = (s == SrcFile);
     const bool backup = (s == SrcBackup);
     dbPath_->setEnabled(file);
@@ -273,7 +276,7 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
                          opts.until, /*end_of_day=*/true))
         opts.has_until = true;
 
-    const int src = source_->currentIndex();
+    const int src = source_->currentData().toInt();
     std::string backup_dir;
     if (src == SrcAuto) {
         db_path = imsg::default_db_path();

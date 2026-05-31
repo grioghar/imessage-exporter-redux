@@ -253,6 +253,24 @@ The container reads only the files you provide (it has no access to a host
 Messages database or Contacts), so it works the same on Linux, macOS, and
 Windows hosts.
 
+### Publishing the image
+
+To push to **Docker Hub** by hand:
+
+```bash
+docker build -t YOUR_USER/imessage-exporter:0.1.0 -t YOUR_USER/imessage-exporter:latest .
+docker login                                   # Docker Hub username + an access token
+docker push YOUR_USER/imessage-exporter:0.1.0
+docker push YOUR_USER/imessage-exporter:latest
+```
+
+(Create the access token at Docker Hub → Account Settings → Security.) The
+[`docker-publish`](.github/workflows/docker-publish.yml) workflow does this
+automatically on a `v*` tag, pushing to the GitHub Container Registry
+(`ghcr.io/grioghar/imessage-exporter-redux`) with no extra secrets. To also push
+to Docker Hub from CI, add `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets and
+uncomment the Docker Hub steps in that workflow.
+
 ## iPhone / iOS
 
 The core is portable C++ and iOS ships `libsqlite3`, so the engine runs on iOS.

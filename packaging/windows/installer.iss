@@ -5,11 +5,15 @@
 #define MyAppName "iMessage Exporter"
 #define MyAppVersion "0.1.0"
 #define MyAppExe "imessage-exporter-gui.exe"
+#define IconFile "icon.ico"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher=imessage-exporter
+#if FileExists(SourcePath + IconFile)
+SetupIconFile={#IconFile}
+#endif
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

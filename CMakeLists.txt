@@ -52,13 +52,20 @@ if(SQLite3_FOUND)
   install(FILES man/imessage-exporter.1 DESTINATION share/man/man1)
 
   # --- Desktop GUI: needs Qt6 Widgets (one C++ app for macOS/Windows/Linux) ---
-  find_package(Qt6 COMPONENTS Widgets Concurrent Network QUIET)
+  find_package(Qt6 COMPONENTS Widgets Concurrent Network Svg QUIET)
   if(Qt6_FOUND)
     set(CMAKE_AUTOMOC ON)
-    add_executable(imessage-exporter-gui
-      gui/main.cpp gui/main_window.cpp gui/icloud_contacts.cpp)
+    set(CMAKE_AUTORCC ON)
+    set(GUI_SOURCES gui/main.cpp gui/main_window.cpp gui/icloud_contacts.cpp
+        gui/resources.qrc)
+    # Embed the app icon in the Windows .exe when the .ico has been generated
+    # (the package workflow renders assets/icon.ico from the SVG before building).
+    if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.ico")
+      list(APPEND GUI_SOURCES assets/app_icon.rc)
+    endif()
+    add_executable(imessage-exporter-gui ${GUI_SOURCES})
     target_link_libraries(imessage-exporter-gui
-      PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent Qt6::Network)
+      PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg)
     if(APPLE)
       # Produces "iMessage Exporter.app" for double-click launch.
       set_target_properties(imessage-exporter-gui PROPERTIES

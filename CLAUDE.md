@@ -225,6 +225,13 @@ Planned front-ends, all calling the same `export_database()` / bridge:
   `parse_vcards`. Deliberate choice — Apple's primary-password login (SRP + 2FA +
   anisette) is brittle/ToS-touchy and intentionally not built. The CardDAV client
   is compile-checked only (no iCloud account in CI), so expect live iteration.
+  The "Auto-detect on this Mac" source is compiled in only on macOS
+  (`Q_OS_MACOS`); the source combo uses itemData (not index) so it's robust to
+  that. App icon: `assets/icon.svg` is the master; embedded as the window icon
+  via `gui/resources.qrc` (Qt6::Svg + AUTORCC), and rendered per-platform in the
+  package workflow (Linux PNG via rsvg, macOS `.icns` via iconutil, Windows
+  `.ico` via ImageMagick embedded through `assets/app_icon.rc`). A
+  `docker-publish` workflow pushes the CLI image to GHCR on a `v*` tag.
   macOS builds it as a `MACOSX_BUNDLE`
   named "iMessage Exporter.app". Gated on `find_package(Qt6)`; CI builds it on
   Linux (`qt6-base-dev`). CI now compiles the GUI on macOS/Windows/Linux

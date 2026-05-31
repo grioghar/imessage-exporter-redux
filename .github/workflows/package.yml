@@ -26,6 +26,21 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --target imessage-exporter-gui
+      - name: App icon
+        run: |
+          brew install librsvg >/dev/null
+          mkdir icon.iconset
+          for s in 16 32 64 128 256 512; do
+            rsvg-convert -w $s -h $s assets/icon.svg -o "icon.iconset/icon_${s}x${s}.png"
+            rsvg-convert -w $((s*2)) -h $((s*2)) assets/icon.svg -o "icon.iconset/icon_${s}x${s}@2x.png"
+          done
+          iconutil -c icns icon.iconset -o AppIcon.icns
+          APP="build/iMessage Exporter.app"
+          cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" \
+            "$APP/Contents/Info.plist" \
+            || /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" \
+            "$APP/Contents/Info.plist"
       - name: Bundle Qt + make DMG
         run: |
           macdeployqt "build/iMessage Exporter.app" -dmg
@@ -47,8 +62,17 @@ jobs:
         with:
           version: '6.7.*'
           cache: true
-      - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
+      - name: Install Inno Setup + ImageMagick
+        run: |
+          choco install innosetup -y --no-progress
+          choco install imagemagick -y --no-progress
+      - name: Render app icon (.ico)
+        shell: bash
+        run: |
+          # Best-effort: embed in the .exe (via assets/app_icon.rc) when produced.
+          magick -background none -density 512 assets/icon.svg \
+            -define icon:auto-resize=256,128,64,48,32,16 assets/icon.ico || \
+            echo "icon render skipped (no SVG delegate)"
       - name: Build
         shell: bash
         run: |
@@ -63,6 +87,7 @@ jobs:
           cp "$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/sqlite3.dll" installer_build/staging/ || true
           windeployqt installer_build/staging/imessage-exporter-gui.exe
           cp packaging/windows/installer.iss installer_build/
+          cp assets/icon.ico installer_build/ || true
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" installer_build/installer.iss
           mkdir -p dist && cp installer_build/dist/iMessage-Exporter-Setup.exe dist/
       - uses: actions/upload-artifact@v4
@@ -78,7 +103,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libgl1-mesa-dev imagemagick file
+          sudo apt-get install -y libsqlite3-dev libgl1-mesa-dev librsvg2-bin file
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.*'
@@ -91,7 +116,7 @@ jobs:
         run: |
           mkdir -p AppDir/usr/bin
           cp build/imessage-exporter-gui AppDir/usr/bin/
-          convert -size 256x256 xc:'#0b84ff' AppDir/imessage-exporter.png
+          rsvg-convert -w 256 -h 256 assets/icon.svg -o AppDir/imessage-exporter.png
           cat > AppDir/imessage-exporter.desktop <<'EOF'
           [Desktop Entry]
           Type=Application
