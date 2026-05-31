@@ -39,6 +39,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
+            docker.io/grioghar/imessage-exporter-redux
           tags: |
             type=ref,event=tag
             type=raw,value=latest
