@@ -12,7 +12,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_compile_options(-Wall -Wextra)
+if(MSVC)
+  add_compile_options(/W3)
+else()
+  add_compile_options(-Wall -Wextra)
+endif()
 
 # --- Core library: zero external dependencies, fully unit-testable ----------
 add_library(imsg_core STATIC
