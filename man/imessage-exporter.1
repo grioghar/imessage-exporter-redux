@@ -1,0 +1,93 @@
+.TH IMESSAGE-EXPORTER 1 "2026" "imessage-exporter 0.1.0" "User Commands"
+.SH NAME
+imessage-exporter \- export macOS iMessage/SMS history to TXT, JSON, or HTML
+.SH SYNOPSIS
+.B imessage-exporter
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B imessage-exporter
+reads a macOS Messages database (\fBchat.db\fR) read-only and writes each
+conversation to a portable file. By default it reads
+.IR $HOME/Library/Messages/chat.db ,
+which on a Mac signed into Messages (with \fIMessages in iCloud\fR enabled) holds
+the full synced history. A database can also be extracted from an unencrypted
+iTunes/Finder device backup with \fB--backup\fR.
+.PP
+There is no direct iCloud download for messages: Apple exposes no API and
+\fIMessages in iCloud\fR is end-to-end encrypted, so history must come from a
+synced Mac or a device backup.
+.SH OPTIONS
+.TP
+.BI --db " PATH"
+Path to the Messages database. Default: \fI$HOME/Library/Messages/chat.db\fR.
+.TP
+.BI --format " FMT"
+Output format: \fBtxt\fR, \fBjson\fR, or \fBhtml\fR. Default: \fBtxt\fR.
+.TP
+.BI --output " DIR"
+Directory for exported files. Default: \fI./imessage-export\fR.
+.TP
+.BI --me " NAME"
+Label for messages you sent. Default: \fBMe\fR.
+.TP
+.BI --since " DATE"
+Only messages on/after \fIDATE\fR (\fBYYYY-MM-DD\fR[\fB HH:MM:SS\fR]).
+.TP
+.BI --until " DATE"
+Only messages on/before \fIDATE\fR; a date alone means the end of that day.
+.TP
+.B --combined
+Write one combined file instead of one per conversation.
+.TP
+.B --copy-attachments
+Copy attachment files into \fI<output>/attachments\fR and link them.
+.TP
+.B --contacts
+Resolve names via the default macOS Contacts database.
+.TP
+.BI --contacts-db " PATH"
+Resolve names via a specific \fB.abcddb\fR or vCard \fB.vcf\fR file (or directory).
+.TP
+.BI --backup " SPEC"
+Source from an iTunes/Finder backup: a directory path, a device UDID, or
+\fBlatest\fR. Unencrypted backups only.
+.TP
+.B --list-backups
+List discovered device backups and exit.
+.TP
+.B --list-chats
+List conversations and exit.
+.TP
+.BI --log-level " LVL"
+Log verbosity: \fBerror\fR, \fBwarn\fR, \fBinfo\fR, \fBdebug\fR (or set
+\fBIMSG_LOG_LEVEL\fR). Default: \fBwarn\fR.
+.TP
+.BR -v ", " -vv
+Shortcuts for \fB--log-level info\fR / \fB--log-level debug\fR.
+.TP
+.B --version
+Print version and exit.
+.TP
+.B --help
+Show help and exit.
+.SH ENVIRONMENT
+.TP
+.B IMSG_LOG_LEVEL
+Default log level when \fB--log-level\fR is not given.
+.SH FILES
+.TP
+.I ~/Library/Messages/chat.db
+Default Messages database (macOS).
+.TP
+.I ~/Library/Application Support/AddressBook
+Default Contacts location used by \fB--contacts\fR (macOS).
+.SH EXIT STATUS
+.B 0
+on success, non-zero on error (e.g. database not found, no conversations).
+.SH NOTES
+On modern macOS the running terminal needs Full Disk Access to read
+.IR chat.db .
+.SH SEE ALSO
+Project documentation: https://github.com/grioghar/imessage-exporter-redux
+.SH LICENSE
+MIT.

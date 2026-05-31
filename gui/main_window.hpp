@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 
+#include "icloud_contacts.hpp"
 #include "imsg/export_job.hpp"
 
 class QComboBox;
@@ -38,6 +39,10 @@ class MainWindow : public QWidget {
     void startExport();
     void exportFinished();
     void openOutputDir();
+    void importICloudContacts();
+    void icloudFinished();
+    void showHowToGetData();
+    void showAbout();
 
    private:
     // Validates the form and fills the engine inputs; returns false (+ message)
@@ -65,6 +70,7 @@ class MainWindow : public QWidget {
     QComboBox* contacts_ = nullptr;     // none / this Mac / file / from backup
     QLineEdit* contactsPath_ = nullptr;
     QPushButton* contactsBrowse_ = nullptr;
+    QPushButton* icloudBtn_ = nullptr;
     QComboBox* logLevel_ = nullptr;
 
     QPushButton* exportBtn_ = nullptr;
@@ -73,6 +79,7 @@ class MainWindow : public QWidget {
     QPlainTextEdit* logView_ = nullptr;
 
     QFutureWatcher<imsg::ExportSummary> watcher_;
+    QFutureWatcher<icloud::Result> icloudWatcher_;
     std::shared_ptr<std::mutex> logMutex_;
     std::shared_ptr<std::vector<std::string>> logBuffer_;
     QTemporaryDir tempDir_;  // holds files extracted from a backup

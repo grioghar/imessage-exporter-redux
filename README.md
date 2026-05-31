@@ -64,7 +64,8 @@ ctest --test-dir build      # runs the core unit tests
   Install Qt 6 (`qt6-base-dev` on Debian/Ubuntu, or the official Qt installer on
   macOS/Windows). Without Qt, only the CLI is built.
 
-The CLI binary is produced at `build/imessage-exporter`.
+The CLI binary is produced at `build/imessage-exporter`; a man page is installed
+to `share/man/man1/imessage-exporter.1` (`man imessage-exporter` after install).
 
 ## Usage
 
@@ -189,6 +190,15 @@ choose format / output folder / date range / combined / attachment-copy /
 contact-name options, and click **Export** — the work runs off the UI thread and
 the log pane shows progress. It builds from the **one** C++ codebase for macOS,
 Windows, and Linux.
+
+A **Help** menu (How to get your data / online docs / About) explains, with
+clickable links, where to obtain a `chat.db` and how to get your contacts. The
+**Import iCloud Contacts…** button (handy on Windows/Linux, which have no local
+Contacts database) fetches your contacts over CardDAV using an Apple ID and an
+**app-specific password** (create one at
+[account.apple.com](https://account.apple.com) → Sign-In and Security →
+App-Specific Passwords) — your normal Apple ID password is not used, and there is
+no raw Apple-ID/2FA login (Apple does not support that for third-party apps).
 
 ```bash
 cmake -S . -B build            # detects Qt6 and adds the GUI target

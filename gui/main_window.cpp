@@ -5,6 +5,8 @@
 #include <QDate>
 #include <QDateEdit>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -13,6 +15,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -34,6 +38,24 @@ namespace {
 // Index conventions for the source / contacts combo boxes.
 enum Source { SrcAuto = 0, SrcFile = 1, SrcBackup = 2 };
 enum Contacts { CtNone = 0, CtThisMac = 1, CtFile = 2, CtBackup = 3 };
+
+// Modal dialog showing rich text with clickable (externally-opened) links.
+void richTextDialog(QWidget* parent, const QString& title, const QString& html) {
+    QDialog dlg(parent);
+    dlg.setWindowTitle(title);
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* label = new QLabel(html, &dlg);
+    label->setTextFormat(Qt::RichText);
+    label->setOpenExternalLinks(true);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    layout->addWidget(label);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    dlg.resize(580, 460);
+    dlg.exec();
+}
 }  // namespace
 
 MainWindow::MainWindow()
@@ -125,6 +147,11 @@ MainWindow::MainWindow()
     ctRow->addWidget(contactsBrowse_);
     form->addRow("Contacts file:", ctRow);
 
+    icloudBtn_ = new QPushButton("Import iCloud Contacts…");
+    icloudBtn_->setToolTip("Fetch your iCloud contacts over CardDAV using an "
+                           "app-specific password.");
+    form->addRow("", icloudBtn_);
+
     logLevel_ = new QComboBox;
     logLevel_->addItems({"error", "warn", "info", "debug"});
     logLevel_->setCurrentText("info");
@@ -144,7 +171,23 @@ MainWindow::MainWindow()
     logView_->setReadOnly(true);
     logView_->setMinimumHeight(160);
 
+    // --- Menu bar (Help) ----------------------------------------------------
+    auto* menuBar = new QMenuBar;
+    QMenu* helpMenu = menuBar->addMenu("&Help");
+    helpMenu->addAction("How to get your data…", this, &MainWindow::showHowToGetData);
+    helpMenu->addAction("Online documentation", this, [] {
+        QDesktopServices::openUrl(
+            QUrl("https://github.com/grioghar/imessage-exporter-redux#readme"));
+    });
+    helpMenu->addAction("Report an issue", this, [] {
+        QDesktopServices::openUrl(
+            QUrl("https://github.com/grioghar/imessage-exporter-redux/issues"));
+    });
+    helpMenu->addSeparator();
+    helpMenu->addAction("About iMessage Exporter", this, &MainWindow::showAbout);
+
     auto* root = new QVBoxLayout(this);
+    root->setMenuBar(menuBar);
     root->addLayout(form);
     root->addLayout(btnRow);
     root->addWidget(status_);
@@ -160,8 +203,12 @@ MainWindow::MainWindow()
     connect(untilOn_, &QCheckBox::toggled, until_, &QWidget::setEnabled);
     connect(exportBtn_, &QPushButton::clicked, this, &MainWindow::startExport);
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
+    connect(icloudBtn_, &QPushButton::clicked, this,
+            &MainWindow::importICloudContacts);
     connect(&watcher_, &QFutureWatcher<imsg::ExportSummary>::finished, this,
             &MainWindow::exportFinished);
+    connect(&icloudWatcher_, &QFutureWatcher<icloud::Result>::finished, this,
+            &MainWindow::icloudFinished);
 
     onSourceChanged();
     onContactsChanged();
@@ -372,4 +419,122 @@ void MainWindow::exportFinished() {
 void MainWindow::openOutputDir() {
     if (!lastOutputDir_.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(lastOutputDir_));
+}
+
+void MainWindow::importICloudContacts() {
+    QDialog dlg(this);
+    dlg.setWindowTitle("Import iCloud Contacts");
+    auto* form = new QFormLayout(&dlg);
+
+    auto* info = new QLabel(
+        "Connect to iCloud over CardDAV to import your contacts for name "
+        "resolution.<br><br>"
+        "Use an <b>app-specific password</b>, not your normal Apple ID password: "
+        "create one at "
+        "<a href=\"https://account.apple.com\">account.apple.com</a> &rarr; "
+        "Sign-In and Security &rarr; App-Specific Passwords.",
+        &dlg);
+    info->setTextFormat(Qt::RichText);
+    info->setOpenExternalLinks(true);
+    info->setWordWrap(true);
+    form->addRow(info);
+
+    auto* idField = new QLineEdit(&dlg);
+    idField->setPlaceholderText("you@icloud.com");
+    auto* pwField = new QLineEdit(&dlg);
+    pwField->setEchoMode(QLineEdit::Password);
+    pwField->setPlaceholderText("xxxx-xxxx-xxxx-xxxx");
+    form->addRow("Apple ID:", idField);
+    form->addRow("App password:", pwField);
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText("Connect");
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QString appleId = idField->text().trimmed();
+    const QString appPw = pwField->text().trimmed();
+    if (appleId.isEmpty() || appPw.isEmpty()) return;
+
+    icloudBtn_->setEnabled(false);
+    status_->setText("Connecting to iCloud…");
+    icloudWatcher_.setFuture(QtConcurrent::run(
+        [appleId, appPw]() { return icloud::fetchContacts(appleId, appPw); }));
+}
+
+void MainWindow::icloudFinished() {
+    icloudBtn_->setEnabled(true);
+    const icloud::Result result = icloudWatcher_.result();
+    if (!result.ok) {
+        status_->setText("iCloud import failed.");
+        QMessageBox::warning(
+            this, "iCloud import failed",
+            result.error +
+                "\n\nAlternatively, export a vCard at iCloud.com → Contacts "
+                "and choose \"Contacts file…\".");
+        return;
+    }
+    if (!tempDir_.isValid()) {
+        status_->setText("Could not create a temporary file for the contacts.");
+        return;
+    }
+    const QString path = tempDir_.filePath("icloud-contacts.vcf");
+    QFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::warning(this, "iCloud import",
+                             "Could not save the imported contacts.");
+        return;
+    }
+    out.write(result.vcards.toUtf8());
+    out.close();
+
+    contacts_->setCurrentIndex(CtFile);  // "Contacts file…"
+    contactsPath_->setText(path);
+    onContactsChanged();
+    status_->setText("Imported iCloud contacts; they will be used for name resolution.");
+}
+
+void MainWindow::showHowToGetData() {
+    richTextDialog(
+        this, "How to get your data",
+        "<h3>Messages (chat.db)</h3>"
+        "<ul>"
+        "<li><b>From a Mac:</b> with Messages signed in (turn on <i>Messages in "
+        "iCloud</i> for your full history), the database is at "
+        "<code>~/Library/Messages/chat.db</code>. The app/terminal needs "
+        "<a href=\"https://support.apple.com/guide/mac-help/mchld5a35146/mac\">"
+        "Full Disk Access</a>.</li>"
+        "<li><b>From an iPhone backup:</b> make an <b>unencrypted</b> local backup "
+        "in Finder/iTunes, then pick the \"Device backup\" source.</li>"
+        "<li>iCloud has <b>no web or API access to Messages</b> (they are "
+        "end-to-end encrypted), so message history must come from a Mac or a "
+        "device backup.</li>"
+        "</ul>"
+        "<h3>Contacts (for names instead of phone numbers)</h3>"
+        "<ul>"
+        "<li><b>iCloud, in this app:</b> use \"Import iCloud Contacts…\" with an "
+        "<a href=\"https://account.apple.com\">app-specific password</a>.</li>"
+        "<li><b>vCard export:</b> at "
+        "<a href=\"https://www.icloud.com/contacts\">iCloud.com &rarr; Contacts</a>, "
+        "select all and Export vCard, then choose \"Contacts file…\".</li>"
+        "<li><b>On a Mac:</b> the local Contacts database is detected "
+        "automatically.</li>"
+        "</ul>"
+        "<p>Full guide in the "
+        "<a href=\"https://github.com/grioghar/imessage-exporter-redux#readme\">"
+        "online documentation</a>.</p>");
+}
+
+void MainWindow::showAbout() {
+    richTextDialog(
+        this, "About iMessage Exporter",
+        "<h3>iMessage Exporter 0.1.0</h3>"
+        "<p>Export macOS iMessage / SMS history to TXT, JSON, or HTML.</p>"
+        "<p>A small, fast C++ tool with a Qt desktop front-end, sharing one "
+        "export engine across the CLI, desktop, and iOS.</p>"
+        "<p><a href=\"https://github.com/grioghar/imessage-exporter-redux\">"
+        "github.com/grioghar/imessage-exporter-redux</a><br>MIT License.</p>");
 }

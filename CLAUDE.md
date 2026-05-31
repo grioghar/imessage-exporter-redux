@@ -49,6 +49,9 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   └── database.hpp     # read-only chat.db reader (SQLite)
 ├── src/                 # one .cpp per header, + main.cpp (CLI)
 ├── gui/                 # Qt 6 desktop app (imessage-exporter-gui) — optional
+│   ├── main_window.*    # window, Help menu, About, iCloud import button
+│   └── icloud_contacts.*# CardDAV contacts fetch (Qt Network, app-specific pw)
+├── man/imessage-exporter.1  # CLI man page (installed to share/man/man1)
 ├── tests/test_core.cpp  # dependency-free unit tests
 ├── docs/SCHEMA.md       # database schema notes & quirks — READ THIS
 ├── CMakeLists.txt
@@ -215,7 +218,14 @@ Planned front-ends, all calling the same `export_database()` / bridge:
   Messages DB / a database file / a device backup; options for
   format/output/date-range/combined/copy-attachments/contacts/log-level; export
   runs off the UI thread via `QtConcurrent` with a `QFutureWatcher`, and the log
-  pane is fed by a `set_log_sink` callback. macOS builds it as a `MACOSX_BUNDLE`
+  pane is fed by a `set_log_sink` callback. A Help menu (How to get your data /
+  docs / About, clickable links) and an "Import iCloud Contacts…" button are
+  wired in (`gui/icloud_contacts.cpp`): the latter fetches contacts over
+  **CardDAV with an app-specific password** (Qt Network) and feeds the vCards to
+  `parse_vcards`. Deliberate choice — Apple's primary-password login (SRP + 2FA +
+  anisette) is brittle/ToS-touchy and intentionally not built. The CardDAV client
+  is compile-checked only (no iCloud account in CI), so expect live iteration.
+  macOS builds it as a `MACOSX_BUNDLE`
   named "iMessage Exporter.app". Gated on `find_package(Qt6)`; CI builds it on
   Linux (`qt6-base-dev`). CI now compiles the GUI on macOS/Windows/Linux
   (`jurplel/install-qt-action`; Windows gets SQLite via vcpkg). The `package`

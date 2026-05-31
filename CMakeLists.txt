@@ -49,14 +49,16 @@ if(SQLite3_FOUND)
   add_executable(imessage-exporter src/main.cpp)
   target_link_libraries(imessage-exporter PRIVATE imsg_db)
   install(TARGETS imessage-exporter RUNTIME DESTINATION bin)
+  install(FILES man/imessage-exporter.1 DESTINATION share/man/man1)
 
   # --- Desktop GUI: needs Qt6 Widgets (one C++ app for macOS/Windows/Linux) ---
-  find_package(Qt6 COMPONENTS Widgets Concurrent QUIET)
+  find_package(Qt6 COMPONENTS Widgets Concurrent Network QUIET)
   if(Qt6_FOUND)
     set(CMAKE_AUTOMOC ON)
-    add_executable(imessage-exporter-gui gui/main.cpp gui/main_window.cpp)
+    add_executable(imessage-exporter-gui
+      gui/main.cpp gui/main_window.cpp gui/icloud_contacts.cpp)
     target_link_libraries(imessage-exporter-gui
-      PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent)
+      PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent Qt6::Network)
     if(APPLE)
       # Produces "iMessage Exporter.app" for double-click launch.
       set_target_properties(imessage-exporter-gui PROPERTIES
