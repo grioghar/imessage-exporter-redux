@@ -31,6 +31,13 @@ extern "C" {
 int imsg_export(const char *db_path, const char *out_dir, const char *format,
                 const char *me_label, char *err_buf, int err_buf_len);
 
+/*
+ * Sets the diagnostic log threshold (messages go to stderr). Levels:
+ *   0 = error, 1 = warn (default), 2 = info, 3 = debug.
+ * Out-of-range values are clamped. Safe to call before imsg_export.
+ */
+void imsg_set_log_level(int level);
+
 /* Library version string, e.g. "0.1.0". Never NULL. */
 const char *imsg_version(void);
 

@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "imsg/attributed_body.hpp"
+#include "imsg/log.hpp"
 #include "imsg/sqlite_uri.hpp"
 #include "imsg/time_util.hpp"
 
@@ -70,6 +71,7 @@ void MessagesDatabase::open() {
         throw DatabaseError("cannot open " + db_path_ + ": " + msg);
     }
     db_ = db;
+    log_info("opened database (read-only): " + db_path_);
 }
 
 void MessagesDatabase::close() {
@@ -91,6 +93,9 @@ std::vector<Chat> MessagesDatabase::load_chat_index() {
         auto mcols = table_columns(db, "message");
         has_attributed_ = mcols.count("attributedBody") != 0;
         has_msg_service_ = mcols.count("service") != 0;
+        log_debug(std::string("message columns: attributedBody=") +
+                  (has_attributed_ ? "yes" : "no") + " service=" +
+                  (has_msg_service_ ? "yes" : "no"));
     }
 
     // --- chats ---------------------------------------------------------
@@ -154,6 +159,7 @@ std::vector<Chat> MessagesDatabase::load_chat_index() {
         }
     }
 
+    log_info("loaded chat index: " + std::to_string(chats.size()) + " conversation(s)");
     return chats;
 }
 
@@ -253,6 +259,10 @@ void MessagesDatabase::load_messages(Chat& chat) {
         }
         sqlite3_finalize(stmt);
     }
+
+    if (log_debug_enabled())
+        log_debug("chat " + std::to_string(chat.rowid) + " (" + chat.title() +
+                  "): loaded " + std::to_string(chat.messages.size()) + " message(s)");
 }
 
 }  // namespace imsg

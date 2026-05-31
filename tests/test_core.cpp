@@ -11,6 +11,7 @@
 #include "imsg/attributed_body.hpp"
 #include "imsg/contact_book.hpp"
 #include "imsg/exporters.hpp"
+#include "imsg/log.hpp"
 #include "imsg/models.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/vcard.hpp"
@@ -200,6 +201,20 @@ void test_contact_book() {
     check_eq(b.name_for("5551234567"), "Alice Example", "contacts: first name wins");
 }
 
+void test_log_level() {
+    imsg::LogLevel lvl;
+    check(imsg::parse_log_level("error", lvl) && lvl == imsg::LogLevel::Error,
+          "log: error");
+    check(imsg::parse_log_level("WARN", lvl) && lvl == imsg::LogLevel::Warn,
+          "log: warn case-insensitive");
+    check(imsg::parse_log_level("info", lvl) && lvl == imsg::LogLevel::Info,
+          "log: info");
+    check(imsg::parse_log_level("3", lvl) && lvl == imsg::LogLevel::Debug,
+          "log: numeric debug");
+    check(!imsg::parse_log_level("loud", lvl), "log: rejects unknown");
+    check_eq(imsg::log_level_name(imsg::LogLevel::Debug), "debug", "log: level name");
+}
+
 void test_vcard() {
     // Two records: one with FN + phone + email, one company contact (ORG only).
     std::string vcf =
@@ -295,6 +310,7 @@ int main() {
     test_html_export();
     test_html_escaping();
     test_parse_date();
+    test_log_level();
     test_contact_book();
     test_vcard();
     test_combined_export();

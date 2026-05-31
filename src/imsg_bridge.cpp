@@ -6,6 +6,7 @@
 
 #include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
+#include "imsg/log.hpp"
 
 namespace {
 
@@ -41,6 +42,12 @@ extern "C" int imsg_export(const char* db_path, const char* out_dir,
         return -1;
     }
     return summary.conversations;
+}
+
+extern "C" void imsg_set_log_level(int level) {
+    if (level < 0) level = 0;
+    if (level > 3) level = 3;
+    imsg::set_log_level(static_cast<imsg::LogLevel>(level));
 }
 
 extern "C" const char* imsg_version(void) { return "0.1.0"; }
