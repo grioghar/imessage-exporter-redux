@@ -31,13 +31,25 @@ class MessagesDatabase {
     void open();
     void close();
 
-    // Loads all conversations (with participants, messages, attachments).
-    std::vector<Chat> load_chats();
+    // Loads a lightweight index of conversations: participants and a
+    // message_count, but no message bodies. Cheap even on a huge database.
+    std::vector<Chat> load_chat_index();
+
+    // Populates chat.messages (with attachments) for a single conversation,
+    // identified by chat.rowid. Lets callers export one chat at a time so peak
+    // memory stays proportional to the largest single conversation, not the
+    // whole database.
+    void load_messages(Chat& chat);
 
    private:
     std::string db_path_;
     std::string me_label_;
     void* db_ = nullptr;  // sqlite3* (opaque to avoid leaking the header here)
+
+    // Schema flags detected once in load_chat_index() and reused per chat, so
+    // the per-conversation queries don't re-run PRAGMA table_info each time.
+    bool has_attributed_ = false;  // message.attributedBody present
+    bool has_msg_service_ = false;  // message.service present
 };
 
 }  // namespace imsg

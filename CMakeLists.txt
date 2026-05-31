@@ -26,12 +26,26 @@ add_executable(imsg_tests tests/test_core.cpp)
 target_link_libraries(imsg_tests PRIVATE imsg_core)
 add_test(NAME core COMMAND imsg_tests)
 
-# --- CLI binary: needs SQLite3 (ships with macOS; libsqlite3-dev on Linux) --
+# --- SQLite-backed pieces: need SQLite3 (ships with macOS/iOS; libsqlite3-dev
+#     on Linux) ----------------------------------------------------------------
 find_package(SQLite3)
 if(SQLite3_FOUND)
-  add_executable(imessage-exporter src/main.cpp src/database.cpp)
-  target_link_libraries(imessage-exporter PRIVATE imsg_core SQLite::SQLite3)
+  # Reader + streaming export engine, shared by the CLI and the embedding bridge.
+  add_library(imsg_db STATIC src/database.cpp src/export_job.cpp)
+  target_link_libraries(imsg_db PUBLIC imsg_core SQLite::SQLite3)
+
+  # CLI binary.
+  add_executable(imessage-exporter src/main.cpp)
+  target_link_libraries(imessage-exporter PRIVATE imsg_db)
   install(TARGETS imessage-exporter RUNTIME DESTINATION bin)
+
+  # Embeddable static library exposing the C ABI (imsg_bridge.h). This is what an
+  # iOS app links against — see docs/IOS.md. Build for iOS with an iOS CMake
+  # toolchain, or consume the sources via the SwiftPM package (Package.swift).
+  add_library(imsg_mobile STATIC src/imsg_bridge.cpp)
+  target_link_libraries(imsg_mobile PUBLIC imsg_db)
+  install(TARGETS imsg_mobile ARCHIVE DESTINATION lib)
+  install(DIRECTORY include/ DESTINATION include)
 else()
   message(WARNING
     "SQLite3 not found: building the core library and tests only. "

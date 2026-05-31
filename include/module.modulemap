@@ -1,0 +1,7 @@
+// Exposes ONLY the pure-C bridge to Swift/Clang module consumers. The C++
+// headers next to it stay private (used internally during compilation), so the
+// Swift importer sees a clean C interface. Used by Package.swift.
+module ImsgExporter {
+    header "imsg/imsg_bridge.h"
+    export *
+}

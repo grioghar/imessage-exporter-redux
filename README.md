@@ -1,5 +1,7 @@
 # imessage-exporter
 
+[![CI](https://github.com/grioghar/imessage-exporter-redux/actions/workflows/ci.yml/badge.svg)](https://github.com/grioghar/imessage-exporter-redux/actions/workflows/ci.yml)
+
 A small, fast, **C++17** command-line tool that exports your macOS iMessage / SMS
 history to portable formats (**TXT**, **JSON**, **HTML**).
 
@@ -111,6 +113,20 @@ conversation, and renders each with the selected exporter.
 
 See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the schema details and the timestamp /
 `attributedBody` quirks handled here.
+
+Conversations are exported one at a time (`export_database` streams chat-by-chat),
+so peak memory stays bounded by the largest single conversation rather than the
+whole database.
+
+## iPhone / iOS
+
+The core is portable C++ and iOS ships `libsqlite3`, so the engine runs on iOS.
+There's a pure-C bridge ([`include/imsg/imsg_bridge.h`](include/imsg/imsg_bridge.h))
+and a SwiftPM package ([`Package.swift`](Package.swift)) for embedding it in an
+app. Note that iOS sandboxing means an app **cannot read the live Messages
+database** — the app instead imports a `chat.db` the user supplies. See
+[`docs/IOS.md`](docs/IOS.md) for the full guide (constraints, build, and UI
+wiring). Building an iOS app requires a Mac with Xcode.
 
 ## Disclaimer
 

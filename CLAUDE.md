@@ -133,7 +133,21 @@ The reader also adapts to schema differences across macOS versions via
 - **Combined** single-file export option (vs one file per chat).
 - **Contact-name resolution** from the macOS Contacts (AddressBook) DB so
   senders show names instead of phone numbers/emails.
-- A CI workflow (`.github/workflows/ci.yml`: cmake build + ctest) — not yet added.
+
+## Done since v0.1.0
+
+- **CI** — `.github/workflows/ci.yml` builds + runs ctest on ubuntu and macos.
+- **Streaming export** — the DB API is now `load_chat_index()` +
+  `load_messages(Chat&)`, and `export_database()` (in `src/export_job.cpp`)
+  writes one conversation at a time so peak memory is bounded by the largest
+  single chat, not the whole DB. The old monolithic `load_chats()` is gone.
+- **iOS bridge** — pure-C ABI in `include/imsg/imsg_bridge.h`
+  (`src/imsg_bridge.cpp`), a `Package.swift` SwiftPM target, and `docs/IOS.md`.
+  CMake builds an `imsg_mobile` static lib for embedding. See `docs/IOS.md`;
+  note iOS apps cannot read the live Messages DB (sandbox) — they import a copy.
+- **Security/robustness** — the `--db` path is percent-encoded before going into
+  the SQLite `file:` URI; timestamp magnitude uses unsigned math (no
+  `llabs(LLONG_MIN)` UB); the `attributedBody` decoder works over `string_view`.
 
 ## Git
 

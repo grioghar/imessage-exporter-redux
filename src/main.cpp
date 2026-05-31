@@ -1,17 +1,12 @@
 // Command-line entry point for imessage-exporter.
 #include <algorithm>
-#include <cctype>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "imsg/database.hpp"
+#include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
-
-namespace fs = std::filesystem;
 
 namespace {
 
@@ -30,24 +25,6 @@ void print_usage(std::ostream& os) {
        << "  --list-chats     List conversations and exit\n"
        << "  --version        Print version and exit\n"
        << "  --help           Show this help and exit\n";
-}
-
-std::string slugify(const std::string& value) {
-    std::string out;
-    bool last_dash = false;
-    for (char ch : value) {
-        unsigned char c = static_cast<unsigned char>(ch);
-        if (std::isalnum(c)) {
-            out += static_cast<char>(std::tolower(c));
-            last_dash = false;
-        } else if (!last_dash && !out.empty()) {
-            out += '-';
-            last_dash = true;
-        }
-        if (out.size() >= 80) break;
-    }
-    while (!out.empty() && out.back() == '-') out.pop_back();
-    return out;
 }
 
 // Reads the value following a flag, erroring if it's missing.
@@ -101,68 +78,47 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    std::vector<imsg::Chat> chats;
-    try {
-        imsg::MessagesDatabase db(db_path, me_label);
-        db.open();
-        chats = db.load_chats();
-    } catch (const imsg::DatabaseError& e) {
-        std::cerr << "error: " << e.what() << "\n";
-        return 1;
-    }
-
-    // Keep only conversations that actually contain messages.
-    chats.erase(std::remove_if(chats.begin(), chats.end(),
-                               [](const imsg::Chat& c) { return c.messages.empty(); }),
-                chats.end());
-
-    if (chats.empty()) {
-        std::cerr << "No conversations with messages were found.\n";
-        return 1;
-    }
-
     if (list_chats) {
+        std::vector<imsg::Chat> chats;
+        try {
+            imsg::MessagesDatabase db(db_path, me_label);
+            db.open();
+            chats = db.load_chat_index();
+        } catch (const imsg::DatabaseError& e) {
+            std::cerr << "error: " << e.what() << "\n";
+            return 1;
+        }
+        chats.erase(std::remove_if(chats.begin(), chats.end(),
+                                   [](const imsg::Chat& c) {
+                                       return c.message_count == 0;
+                                   }),
+                    chats.end());
+        if (chats.empty()) {
+            std::cerr << "No conversations with messages were found.\n";
+            return 1;
+        }
         std::sort(chats.begin(), chats.end(),
                   [](const imsg::Chat& a, const imsg::Chat& b) {
-                      return a.messages.size() > b.messages.size();
+                      return a.message_count > b.message_count;
                   });
         for (const auto& c : chats) {
-            std::cout << c.messages.size() << "\t" << c.title() << "\n";
+            std::cout << c.message_count << "\t" << c.title() << "\n";
         }
         return 0;
     }
 
-    std::error_code ec;
-    fs::create_directories(output_dir, ec);
-    if (ec) {
-        std::cerr << "error: cannot create output directory '" << output_dir
-                  << "': " << ec.message() << "\n";
+    imsg::ExportSummary summary =
+        imsg::export_database(db_path, output_dir, format, me_label);
+    if (!summary.ok) {
+        std::cerr << "error: " << summary.error << "\n";
+        return 1;
+    }
+    if (summary.conversations == 0) {
+        std::cerr << "No conversations with messages were found.\n";
         return 1;
     }
 
-    const std::string ext = imsg::extension_for(format);
-    std::unordered_set<std::string> used;
-    std::size_t written = 0;
-
-    for (const auto& chat : chats) {
-        std::string base = slugify(chat.title());
-        if (base.empty()) base = "chat-" + std::to_string(chat.rowid);
-        std::string name = base + "." + ext;
-        for (int n = 2; used.count(name); ++n)
-            name = base + "-" + std::to_string(n) + "." + ext;
-        used.insert(name);
-
-        fs::path path = fs::path(output_dir) / name;
-        std::ofstream out(path, std::ios::binary);
-        if (!out) {
-            std::cerr << "error: cannot write '" << path.string() << "'\n";
-            return 1;
-        }
-        out << imsg::render(chat, format);
-        ++written;
-    }
-
-    std::cout << "Exported " << written << " conversation(s) to " << output_dir
-              << " as " << format_name << ".\n";
+    std::cout << "Exported " << summary.conversations << " conversation(s) to "
+              << output_dir << " as " << format_name << ".\n";
     return 0;
 }

@@ -92,12 +92,19 @@ void MessagesDatabase::close() {
     }
 }
 
-std::vector<Chat> MessagesDatabase::load_chats() {
+std::vector<Chat> MessagesDatabase::load_chat_index() {
     if (!db_) throw DatabaseError("database is not open");
     sqlite3* db = as_db(db_);
 
     std::vector<Chat> chats;
     std::unordered_map<long long, std::size_t> index;  // chat ROWID -> chats[]
+
+    // --- detect message-table columns once (reused per conversation) ---
+    {
+        auto mcols = table_columns(db, "message");
+        has_attributed_ = mcols.count("attributedBody") != 0;
+        has_msg_service_ = mcols.count("service") != 0;
+    }
 
     // --- chats ---------------------------------------------------------
     {
@@ -140,15 +147,43 @@ std::vector<Chat> MessagesDatabase::load_chats() {
         }
     }
 
-    // --- attachments (message ROWID -> attachments) --------------------
+    // --- per-chat message counts (cheap; avoids loading bodies) --------
+    {
+        const char* sql =
+            "SELECT chat_id, COUNT(*) FROM chat_message_join GROUP BY chat_id";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                long long chat_id = sqlite3_column_int64(stmt, 0);
+                auto it = index.find(chat_id);
+                if (it != index.end())
+                    chats[it->second].message_count = sqlite3_column_int64(stmt, 1);
+            }
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    return chats;
+}
+
+void MessagesDatabase::load_messages(Chat& chat) {
+    if (!db_) throw DatabaseError("database is not open");
+    sqlite3* db = as_db(db_);
+
+    chat.messages.clear();
+
+    // --- attachments for this chat (message ROWID -> attachments) ------
     std::unordered_map<long long, std::vector<Attachment>> attachments;
     {
         const char* sql =
             "SELECT maj.message_id, a.filename, a.mime_type, a.transfer_name, "
             "a.total_bytes FROM message_attachment_join maj "
-            "JOIN attachment a ON maj.attachment_id = a.ROWID";
+            "JOIN attachment a ON maj.attachment_id = a.ROWID "
+            "JOIN chat_message_join cmj ON maj.message_id = cmj.message_id "
+            "WHERE cmj.chat_id = ?";
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(stmt, 1, chat.rowid);
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 Attachment a;
                 long long msg_id = sqlite3_column_int64(stmt, 0);
@@ -162,22 +197,22 @@ std::vector<Chat> MessagesDatabase::load_chats() {
         }
     }
 
-    // --- messages ------------------------------------------------------
+    // --- messages for this chat ----------------------------------------
     {
-        auto cols = table_columns(db, "message");
-        std::string attributed =
-            cols.count("attributedBody") ? "m.attributedBody" : "NULL";
-        std::string service = cols.count("service") ? "m.service" : "NULL";
+        std::string attributed = has_attributed_ ? "m.attributedBody" : "NULL";
+        std::string service = has_msg_service_ ? "m.service" : "NULL";
         std::string sql =
             "SELECT m.ROWID, m.guid, m.text, " + attributed +
             ", m.date, m.date_read, m.is_from_me, " + service +
-            ", h.id, cmj.chat_id FROM message m "
+            ", h.id FROM message m "
+            "JOIN chat_message_join cmj ON m.ROWID = cmj.message_id "
             "LEFT JOIN handle h ON m.handle_id = h.ROWID "
-            "LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id "
+            "WHERE cmj.chat_id = ? "
             "ORDER BY m.date ASC, m.ROWID ASC";
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
             throw DatabaseError(std::string("query messages: ") + sqlite3_errmsg(db));
+        sqlite3_bind_int64(stmt, 1, chat.rowid);
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             Message m;
@@ -208,24 +243,16 @@ std::vector<Chat> MessagesDatabase::load_chats() {
             std::string handle = column_text(stmt, 8);
             m.sender = m.is_from_me ? me_label_ : (handle.empty() ? "Unknown" : handle);
 
-            if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
-                m.has_chat = true;
-                m.chat_id = sqlite3_column_int64(stmt, 9);
-            }
+            m.has_chat = true;
+            m.chat_id = chat.rowid;
 
             auto at = attachments.find(m.rowid);
-            if (at != attachments.end()) m.attachments = at->second;
+            if (at != attachments.end()) m.attachments = std::move(at->second);
 
-            if (m.has_chat) {
-                auto it = index.find(m.chat_id);
-                if (it != index.end())
-                    chats[it->second].messages.push_back(std::move(m));
-            }
+            chat.messages.push_back(std::move(m));
         }
         sqlite3_finalize(stmt);
     }
-
-    return chats;
 }
 
 }  // namespace imsg

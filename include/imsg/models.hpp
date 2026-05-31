@@ -46,6 +46,7 @@ struct Chat {
     std::string display_name;
     std::string service;
     std::vector<std::string> participants;
+    long long message_count = 0;   // populated by the chat index; messages may be unloaded
     std::vector<Message> messages;
 
     // Best human-readable name for the conversation.
