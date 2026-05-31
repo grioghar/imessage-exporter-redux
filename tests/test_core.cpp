@@ -13,6 +13,7 @@
 #include "imsg/exporters.hpp"
 #include "imsg/models.hpp"
 #include "imsg/time_util.hpp"
+#include "imsg/vcard.hpp"
 
 namespace {
 
@@ -199,6 +200,39 @@ void test_contact_book() {
     check_eq(b.name_for("5551234567"), "Alice Example", "contacts: first name wins");
 }
 
+void test_vcard() {
+    // Two records: one with FN + phone + email, one company contact (ORG only).
+    std::string vcf =
+        "BEGIN:VCARD\r\n"
+        "VERSION:3.0\r\n"
+        "FN:Alice Example\r\n"
+        "N:Example;Alice;;;\r\n"
+        "item1.TEL;TYPE=CELL:+1 (555) 123-4567\r\n"
+        "EMAIL;TYPE=INTERNET:Alice@Example.com\r\n"
+        "END:VCARD\r\n"
+        "BEGIN:VCARD\r\n"
+        "ORG:Acme Inc.;Sales\r\n"
+        "TEL:555.987.6543\r\n"
+        "END:VCARD\r\n";
+    imsg::ContactBook b;
+    imsg::parse_vcards(vcf, b);
+    check_eq(b.name_for("5551234567"), "Alice Example", "vcard: FN + grouped phone");
+    check_eq(b.name_for("alice@example.com"), "Alice Example", "vcard: email lowercased");
+    check_eq(b.name_for("(555) 987-6543"), "Acme Inc.", "vcard: ORG fallback");
+
+    // N fallback (no FN) and a folded continuation line.
+    std::string folded =
+        "BEGIN:VCARD\nN:Smith;Bob;;;\nFN:Bob \n Smith\nTEL:+15550002222\nEND:VCARD\n";
+    imsg::ContactBook b2;
+    imsg::parse_vcards(folded, b2);
+    check_eq(b2.name_for("5550002222"), "Bob Smith", "vcard: folded FN line");
+
+    std::string n_only = "BEGIN:VCARD\nN:Jones;Carol;;;\nTEL:+15550003333\nEND:VCARD\n";
+    imsg::ContactBook b3;
+    imsg::parse_vcards(n_only, b3);
+    check_eq(b3.name_for("5550003333"), "Carol Jones", "vcard: N name when no FN");
+}
+
 void test_combined_export() {
     std::vector<imsg::Chat> chats = {make_chat(), make_chat()};
     chats[1].display_name = "Second Chat";
@@ -262,6 +296,7 @@ int main() {
     test_html_escaping();
     test_parse_date();
     test_contact_book();
+    test_vcard();
     test_combined_export();
     test_attachment_copied_path();
     test_chat_title();

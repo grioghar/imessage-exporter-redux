@@ -29,7 +29,7 @@ void print_usage(std::ostream& os) {
        << "  --combined       Write one combined file instead of one per chat\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --contacts       Resolve names via the default macOS Contacts DB\n"
-       << "  --contacts-db P  Resolve names via a specific AddressBook .abcddb/dir\n"
+       << "  --contacts-db P  Resolve names via a specific .abcddb / .vcf file or dir\n"
        << "  --list-chats     List conversations and exit\n"
        << "  --version        Print version and exit\n"
        << "  --help           Show this help and exit\n";
