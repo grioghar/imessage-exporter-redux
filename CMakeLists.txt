@@ -13,6 +13,7 @@ add_compile_options(-Wall -Wextra)
 
 # --- Core library: zero external dependencies, fully unit-testable ----------
 add_library(imsg_core STATIC
+  src/log.cpp
   src/models.cpp
   src/time_util.cpp
   src/attributed_body.cpp

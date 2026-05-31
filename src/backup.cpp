@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "imsg/log.hpp"
 #include "imsg/sqlite_uri.hpp"
 
 namespace fs = std::filesystem;
@@ -203,6 +204,7 @@ bool extract_backup_file(const std::string& backup_dir, const std::string& domai
         err = "cannot copy extracted file to '" + dest + "': " + ec.message();
         return false;
     }
+    log_debug("extracted " + domain + "/" + relative_path + " -> " + dest);
     return true;
 }
 

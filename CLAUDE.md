@@ -36,6 +36,7 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 .
 ├── include/imsg/        # public headers
 │   ├── models.hpp       # Chat / Message / Attachment structs
+│   ├── log.hpp          # 4-level logger (error/warn/info/debug), SQLite-free
 │   ├── time_util.hpp    # Apple "Mac absolute time" conversion
 │   ├── attributed_body.hpp
 │   ├── contact_book.hpp # handle→name map (SQLite-free, in imsg_core)
@@ -194,6 +195,33 @@ The reader also adapts to schema differences across macOS versions via
   backup-extracted contacts resolve. Mac-sync route (the default `chat.db`) now
   gives an actionable hint when the DB is missing. The read-only SQLite URI
   builder was factored into the shared `sqlite_uri.hpp`.
+- **Logging** — `log.hpp`/`log.cpp` (in imsg_core) provide four levels
+  (error/warn/info/debug → stderr). CLI: `--log-level`, `-v`/`-vv`,
+  `IMSG_LOG_LEVEL`; bridge: `imsg_set_log_level()`. Default is warn. Hot paths
+  guard with `log_debug_enabled()`. User-facing results stay on stdout.
+- **Docker** — multi-stage `Dockerfile` builds the Linux CLI (runs ctest during
+  build); bind-mount or `docker cp` your data to `/data`. A `docker` CI job
+  builds the image and smoke-tests the binary.
+
+## Product vision / roadmap (the bigger picture)
+
+The end goal is one export engine behind many front-ends — which is why the
+SQLite-free core + `imsg_db` + the pure-C bridge (`imsg_bridge.h`) split exists.
+Planned front-ends, all calling the same `export_database()` / bridge:
+
+- **Desktop GUI** — a double-clickable `iMessage Exporter.app` (and Windows/Linux
+  equivalents): auto-detect the DB on macOS (`default_db_path` /
+  `default_backup_roots`), present format/range/output options, allow a custom
+  path. **Toolkit not yet chosen** (Qt vs wxWidgets vs native-per-platform vs a
+  localhost web UI) — this is the open decision gating GUI work. Whatever it is,
+  it should call `imsg_db`/the bridge, not reimplement logic.
+- **iOS app** — SwiftUI screens over the existing SwiftPM/bridge target; export
+  from the imported DB or a user-picked path (the app can't read the live DB —
+  see docs/IOS.md). Needs Xcode; not buildable in this repo's CI.
+- **CLI** — done; the reference front-end for the engine.
+
+When adding a front-end, keep all parsing/formatting/IO in the engine and the
+front-end thin.
 
   All four added options share an `ExportOptions` struct (export_job.hpp) rather
   than growing the `export_database` parameter list; the C ABI (`imsg_export`)
