@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# So the static core/db libraries link cleanly into the (PIE) Qt GUI executable.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -42,6 +45,27 @@ if(SQLite3_FOUND)
   add_executable(imessage-exporter src/main.cpp)
   target_link_libraries(imessage-exporter PRIVATE imsg_db)
   install(TARGETS imessage-exporter RUNTIME DESTINATION bin)
+
+  # --- Desktop GUI: needs Qt6 Widgets (one C++ app for macOS/Windows/Linux) ---
+  find_package(Qt6 COMPONENTS Widgets Concurrent QUIET)
+  if(Qt6_FOUND)
+    set(CMAKE_AUTOMOC ON)
+    add_executable(imessage-exporter-gui gui/main.cpp gui/main_window.cpp)
+    target_link_libraries(imessage-exporter-gui
+      PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent)
+    if(APPLE)
+      # Produces "iMessage Exporter.app" for double-click launch.
+      set_target_properties(imessage-exporter-gui PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "iMessage Exporter")
+    endif()
+    install(TARGETS imessage-exporter-gui
+      RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+  else()
+    message(STATUS
+      "Qt6 not found: skipping the desktop GUI. Install Qt 6 (e.g. "
+      "'qt6-base-dev' on Linux) to build 'imessage-exporter-gui'.")
+  endif()
 
   # Embeddable static library exposing the C ABI (imsg_bridge.h). This is what an
   # iOS app links against — see docs/IOS.md. Build for iOS with an iOS CMake
