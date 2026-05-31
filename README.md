@@ -25,11 +25,17 @@ dependencies.
 
 ## Features
 
-- Exports to **TXT**, **JSON**, or **HTML** — one file per conversation.
+- Exports to **TXT**, **JSON**, or **HTML** — one file per conversation, or a
+  single **combined** file (`--combined`).
 - Recovers message text from the `attributedBody` blob (modern macOS frequently
   leaves the plain `text` column `NULL`).
 - Resolves participants, display names, service (iMessage vs SMS), and attachment
   metadata.
+- **Date-range filtering** with `--since` / `--until`.
+- **Copies attachment files** into the export and links them (HTML embeds images)
+  with `--copy-attachments`; otherwise only metadata is exported.
+- **Contact-name resolution** from the macOS Contacts (AddressBook) database, so
+  senders show names instead of phone numbers / emails (`--contacts`).
 - Correct Apple "Mac absolute time" conversion (nanoseconds **and** legacy
   seconds).
 - `--list-chats` to preview conversations without exporting.
@@ -66,6 +72,13 @@ The binary is produced at `build/imessage-exporter`.
 
 # Just list conversations and how many messages each has
 ./build/imessage-exporter --list-chats
+
+# One combined HTML file, names resolved from Contacts, attachments copied in
+./build/imessage-exporter --format html --combined --contacts \
+    --copy-attachments --output ./export
+
+# Only messages from 2023, as JSON
+./build/imessage-exporter --format json --since 2023-01-01 --until 2023-12-31
 ```
 
 ### Options
@@ -76,6 +89,12 @@ The binary is produced at `build/imessage-exporter`.
 | `--format FMT` | Output format: `txt`, `json`, or `html`. | `txt` |
 | `--output DIR` | Directory to write export files into. | `./imessage-export` |
 | `--me NAME` | Label used for messages you sent. | `Me` |
+| `--since DATE` | Only messages on/after `DATE` (`YYYY-MM-DD[ HH:MM:SS]`). | — |
+| `--until DATE` | Only messages on/before `DATE`; a date alone means end of that day. | — |
+| `--combined` | Write one combined file instead of one per conversation. | — |
+| `--copy-attachments` | Copy attachment files into `<output>/attachments` and link them. | — |
+| `--contacts` | Resolve names via the default macOS Contacts database. | — |
+| `--contacts-db PATH` | Resolve names via a specific AddressBook `.abcddb` file or directory. | — |
 | `--list-chats` | List conversations and exit (no export). | — |
 | `--version` | Print version and exit. | — |
 | `--help` | Show help and exit. | — |

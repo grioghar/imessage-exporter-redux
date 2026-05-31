@@ -33,8 +33,9 @@ extern "C" int imsg_export(const char* db_path, const char* out_dir,
         return -1;
     }
 
-    imsg::ExportSummary summary = imsg::export_database(
-        db_path, out_dir, fmt, me_label ? me_label : "Me");
+    imsg::ExportOptions opts;
+    opts.me_label = me_label ? me_label : "Me";
+    imsg::ExportSummary summary = imsg::export_database(db_path, out_dir, fmt, opts);
     if (!summary.ok) {
         set_error(err_buf, err_buf_len, summary.error);
         return -1;

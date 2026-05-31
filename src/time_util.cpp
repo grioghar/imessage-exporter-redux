@@ -1,6 +1,7 @@
 #include "imsg/time_util.hpp"
 
 #include <cstdio>
+#include <ctime>
 
 namespace imsg {
 namespace {
@@ -35,6 +36,28 @@ std::string format_timestamp(std::time_t t) {
     char buffer[32];
     std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
     return std::string(buffer);
+}
+
+bool parse_date(const std::string& text, std::time_t& out, bool end_of_day) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, s = 0;
+    int n = std::sscanf(text.c_str(), "%d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s);
+    if (n < 3) return false;  // need at least a full date
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+    bool has_time = n >= 4;
+    if (!has_time && end_of_day) { h = 23; mi = 59; s = 59; }
+
+    std::tm tm{};
+    tm.tm_year = y - 1900;
+    tm.tm_mon = mo - 1;
+    tm.tm_mday = d;
+    tm.tm_hour = h;
+    tm.tm_min = mi;
+    tm.tm_sec = s;
+    tm.tm_isdst = -1;  // let mktime resolve DST for the local zone
+    std::time_t t = std::mktime(&tm);
+    if (t == static_cast<std::time_t>(-1)) return false;
+    out = t;
+    return true;
 }
 
 }  // namespace imsg

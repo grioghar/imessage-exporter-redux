@@ -13,6 +13,11 @@ struct Attachment {
     std::string transfer_name;
     long long total_bytes = 0;
 
+    // Path (relative to the output directory) of the copied file, set by the
+    // export job when --copy-attachments is used; empty when only metadata is
+    // exported. Always uses '/' separators so it works as an HTML/href path.
+    std::string copied_path;
+
     // Human-friendly name, preferring the transfer name the sender saw.
     std::string display_name() const;
 };

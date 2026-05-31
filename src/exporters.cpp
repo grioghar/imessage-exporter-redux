@@ -76,7 +76,9 @@ const char* kHtmlStyle =
     ".msg.me{align-items:flex-end}"
     ".msg.me .bubble{background:#0b84ff;color:#fff;border-bottom-right-radius:.25rem}"
     ".msg .info{font-size:.7rem;color:#8e8e93;margin:0 .5rem .1rem}"
-    ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}";
+    ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}"
+    "img.attachment{max-width:100%;border-radius:.5rem;display:block;font-style:normal}"
+    "a.attachment{color:inherit}";
 
 }  // namespace
 
@@ -111,7 +113,9 @@ std::string render_text(const Chat& chat) {
         bool wrote = false;
         if (m.has_text()) { os << "  " << m.text << "\n"; wrote = true; }
         for (const Attachment& a : m.attachments) {
-            os << "  <attachment: " << a.display_name() << ">\n";
+            os << "  <attachment: " << a.display_name();
+            if (!a.copied_path.empty()) os << " -> " << a.copied_path;
+            os << ">\n";
             wrote = true;
         }
         if (!wrote) os << "  (no content)\n";
@@ -161,7 +165,10 @@ std::string render_json(const Chat& chat) {
             os << "\"filename\": \"" << json_escape(a.filename) << "\", ";
             os << "\"mime_type\": \"" << json_escape(a.mime_type) << "\", ";
             os << "\"transfer_name\": \"" << json_escape(a.transfer_name) << "\", ";
-            os << "\"total_bytes\": " << a.total_bytes;
+            os << "\"total_bytes\": " << a.total_bytes << ", ";
+            os << "\"copied_path\": "
+               << (a.copied_path.empty() ? "null"
+                                         : "\"" + json_escape(a.copied_path) + "\"");
             os << "}";
         }
         os << "]\n";
@@ -172,15 +179,18 @@ std::string render_json(const Chat& chat) {
     return os.str();
 }
 
-std::string render_html(const Chat& chat) {
+namespace {
+
+bool is_image_mime(const std::string& mime) {
+    return mime.compare(0, 6, "image/") == 0;
+}
+
+// One conversation as a self-contained <div class="conversation"> block, shared
+// by the single-chat document and the combined multi-chat document.
+std::string html_conversation(const Chat& chat) {
     std::ostringstream os;
     const std::string title = html_escape(chat.title());
-    os << "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
-       << "<meta charset=\"utf-8\">\n"
-       << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-       << "<title>" << title << "</title>\n"
-       << "<style>" << kHtmlStyle << "</style>\n</head>\n<body>\n"
-       << "<div class=\"conversation\">\n<header>\n<h1>" << title << "</h1>\n"
+    os << "<div class=\"conversation\">\n<header>\n<h1>" << title << "</h1>\n"
        << "<div class=\"meta\">Service: "
        << html_escape(chat.service.empty() ? "unknown" : chat.service)
        << " &middot; Participants: "
@@ -197,15 +207,44 @@ std::string render_html(const Chat& chat) {
         if (m.has_text()) { os << html_escape(m.text); wrote = true; }
         for (const Attachment& a : m.attachments) {
             if (wrote) os << "<br>";
-            os << "<span class=\"attachment\">\xF0\x9F\x93\x8E "
-               << html_escape(a.display_name()) << "</span>";
+            const std::string name = html_escape(a.display_name());
+            if (!a.copied_path.empty()) {
+                const std::string href = html_escape(a.copied_path);
+                if (is_image_mime(a.mime_type))
+                    os << "<a href=\"" << href << "\"><img class=\"attachment\" src=\""
+                       << href << "\" alt=\"" << name << "\"></a>";
+                else
+                    os << "<a class=\"attachment\" href=\"" << href
+                       << "\">\xF0\x9F\x93\x8E " << name << "</a>";
+            } else {
+                os << "<span class=\"attachment\">\xF0\x9F\x93\x8E " << name << "</span>";
+            }
             wrote = true;
         }
         if (!wrote) os << "<span class=\"empty\">(no content)</span>";
         os << "</div></div>\n";
     }
-    os << "</div>\n</body>\n</html>\n";
+    os << "</div>\n";
     return os.str();
+}
+
+// Opening boilerplate for an HTML document with the given <title>.
+std::string html_head(const std::string& title) {
+    std::ostringstream os;
+    os << "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
+       << "<meta charset=\"utf-8\">\n"
+       << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+       << "<title>" << html_escape(title) << "</title>\n"
+       << "<style>" << kHtmlStyle << "</style>\n</head>\n<body>\n";
+    return os.str();
+}
+
+const char* kHtmlTail = "</body>\n</html>\n";
+
+}  // namespace
+
+std::string render_html(const Chat& chat) {
+    return html_head(chat.title()) + html_conversation(chat) + kHtmlTail;
 }
 
 std::string render(const Chat& chat, Format fmt) {
@@ -213,6 +252,37 @@ std::string render(const Chat& chat, Format fmt) {
         case Format::Json: return render_json(chat);
         case Format::Html: return render_html(chat);
         case Format::Text: default: return render_text(chat);
+    }
+}
+
+std::string combined_prologue(Format fmt) {
+    switch (fmt) {
+        case Format::Json: return "{\n  \"conversations\": [";
+        case Format::Html: return html_head("iMessage export");
+        case Format::Text: default: return "";
+    }
+}
+
+std::string combined_item(const Chat& chat, Format fmt, std::size_t index) {
+    switch (fmt) {
+        case Format::Json:
+            // render_json yields a standalone object; join them into the array.
+            return (index ? ",\n" : "\n") + render_json(chat);
+        case Format::Html:
+            return html_conversation(chat);
+        case Format::Text:
+        default:
+            // Each render_text already ends in a blank line; separate chats with
+            // a rule so the boundaries are obvious in one file.
+            return (index ? std::string(60, '#') + "\n\n" : "") + render_text(chat);
+    }
+}
+
+std::string combined_epilogue(Format fmt) {
+    switch (fmt) {
+        case Format::Json: return "\n  ]\n}\n";
+        case Format::Html: return kHtmlTail;
+        case Format::Text: default: return "";
     }
 }
 

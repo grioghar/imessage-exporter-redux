@@ -1,10 +1,12 @@
 // Read-only access to the macOS Messages (`chat.db`) database.
 #pragma once
 
+#include <ctime>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "imsg/contact_book.hpp"
 #include "imsg/models.hpp"
 
 namespace imsg {
@@ -26,6 +28,17 @@ class MessagesDatabase {
 
     MessagesDatabase(const MessagesDatabase&) = delete;
     MessagesDatabase& operator=(const MessagesDatabase&) = delete;
+
+    // Restricts loaded messages to those whose timestamp is within [since, until]
+    // (epoch seconds; either bound may be disabled). Messages with no usable date
+    // are excluded whenever a bound is active. Set before load_messages().
+    void set_date_range(bool has_since, std::time_t since, bool has_until,
+                        std::time_t until);
+
+    // Supplies a contact book used to resolve handles (phone/email) to display
+    // names for senders and participants. The pointer must outlive this object;
+    // pass nullptr (the default) to leave handles unresolved.
+    void set_contacts(const ContactBook* contacts) { contacts_ = contacts; }
 
     // Opens the database read-only/immutable. Throws DatabaseError on failure.
     void open();
@@ -50,6 +63,12 @@ class MessagesDatabase {
     // the per-conversation queries don't re-run PRAGMA table_info each time.
     bool has_attributed_ = false;  // message.attributedBody present
     bool has_msg_service_ = false;  // message.service present
+
+    bool has_since_ = false;
+    std::time_t since_ = 0;
+    bool has_until_ = false;
+    std::time_t until_ = 0;
+    const ContactBook* contacts_ = nullptr;  // not owned; may be null
 };
 
 }  // namespace imsg
