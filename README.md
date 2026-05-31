@@ -59,8 +59,12 @@ ctest --test-dir build      # runs the core unit tests
 - **macOS:** SQLite3 ships with the system and is found automatically.
 - **Linux:** install `libsqlite3-dev` to build the `imessage-exporter` binary.
   Without it, CMake still builds the core library and tests.
+- **Desktop GUI (optional):** if **Qt 6** is found at configure time, CMake also
+  builds the `imessage-exporter-gui` app (see [Desktop app](#desktop-app)).
+  Install Qt 6 (`qt6-base-dev` on Debian/Ubuntu, or the official Qt installer on
+  macOS/Windows). Without Qt, only the CLI is built.
 
-The binary is produced at `build/imessage-exporter`.
+The CLI binary is produced at `build/imessage-exporter`.
 
 ## Usage
 
@@ -176,6 +180,24 @@ See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the schema details and the timestamp 
 Conversations are exported one at a time (`export_database` streams chat-by-chat),
 so peak memory stays bounded by the largest single conversation rather than the
 whole database.
+
+## Desktop app
+
+A Qt 6 desktop GUI (`gui/`) wraps the same engine in a window: pick a source
+(auto-detected Messages DB on a Mac, a database file, or a device backup),
+choose format / output folder / date range / combined / attachment-copy /
+contact-name options, and click **Export** — the work runs off the UI thread and
+the log pane shows progress. It builds from the **one** C++ codebase for macOS,
+Windows, and Linux.
+
+```bash
+cmake -S . -B build            # detects Qt6 and adds the GUI target
+cmake --build build --target imessage-exporter-gui
+```
+
+On macOS the build produces **`iMessage Exporter.app`** (double-clickable; drag
+to `/Applications`). Distributable bundles (signing/notarization on macOS, an
+installer on Windows) are not wired up yet — see CLAUDE.md.
 
 ## Docker
 
