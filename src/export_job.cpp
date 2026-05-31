@@ -11,6 +11,7 @@
 
 #include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
+#include "imsg/log.hpp"
 
 namespace fs = std::filesystem;
 
@@ -109,6 +110,9 @@ ExportSummary export_database(const std::string& db_path,
             contacts = load_contacts(opts.contacts_path);
         else if (opts.use_contacts)
             contacts = load_contacts_default();
+        if (!contacts.empty())
+            log_info("loaded " + std::to_string(contacts.size()) +
+                     " contact handle(s) for name resolution");
 
         MessagesDatabase db(db_path, opts.me_label);
         db.set_date_range(opts.has_since, opts.since, opts.has_until, opts.until);
@@ -183,6 +187,11 @@ ExportSummary export_database(const std::string& db_path,
 
         summary.ok = true;
         summary.conversations = written;
+        log_info("exported " + std::to_string(written) + " conversation(s) to " +
+                 out_dir + (opts.copy_attachments
+                                ? ", " + std::to_string(summary.attachments_copied) +
+                                      " attachment(s)"
+                                : ""));
         return summary;
     } catch (const DatabaseError& e) {
         summary.error = e.what();

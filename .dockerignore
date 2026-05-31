@@ -1,0 +1,7 @@
+.git
+build/
+**/build/
+*.o
+*.a
+imessage-export/
+.DS_Store

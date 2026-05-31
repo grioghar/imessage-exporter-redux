@@ -28,3 +28,17 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t imessage-exporter:ci .
+
+      - name: Smoke test (runs the built binary)
+        run: |
+          docker run --rm imessage-exporter:ci --version
+          docker run --rm imessage-exporter:ci --help

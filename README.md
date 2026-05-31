@@ -129,8 +129,15 @@ iCloud.com (see `--contacts-db` above).
 | `--backup SPEC` | Source from an iTunes/Finder backup: a directory path, a device UDID, or `latest`. Unencrypted backups only. | — |
 | `--list-backups` | List discovered device backups and exit. | — |
 | `--list-chats` | List conversations and exit (no export). | — |
+| `--log-level LVL` | Log verbosity: `error`, `warn`, `info`, `debug` (or `IMSG_LOG_LEVEL`). | `warn` |
+| `-v` / `-vv` | Shortcuts for `--log-level info` / `--log-level debug`. | — |
 | `--version` | Print version and exit. | — |
 | `--help` | Show help and exit. | — |
+
+Diagnostic logs are written to **stderr** at four levels (error, warn, info,
+debug); normal output (the export summary, `--list-chats`) stays on stdout, so
+you can separate them. The same levels are available to embedders via
+`imsg_set_log_level()` in the C bridge.
 
 On modern macOS the terminal running this tool needs **Full Disk Access**
 (System Settings → Privacy & Security → Full Disk Access) to read `chat.db`.
@@ -169,6 +176,35 @@ See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the schema details and the timestamp 
 Conversations are exported one at a time (`export_database` streams chat-by-chat),
 so peak memory stays bounded by the largest single conversation rather than the
 whole database.
+
+## Docker
+
+A multi-stage [`Dockerfile`](Dockerfile) builds the Linux CLI (the image runs
+the unit tests during the build). Bind-mount a directory containing your data;
+results are written back into it for download:
+
+```bash
+docker build -t imessage-exporter .
+
+# Mounted workflow — chat.db in $PWD, export written to ./export
+docker run --rm -v "$PWD:/data" imessage-exporter \
+    --db /data/chat.db --format html --output /data/export --contacts-db /data/contacts.vcf
+```
+
+Prefer copy-in / copy-out over a mount? Upload your files, run, then download
+the results:
+
+```bash
+id=$(docker create imessage-exporter --db /data/chat.db --output /data/export --format html)
+docker cp ./chat.db "$id:/data/chat.db"
+docker start -a "$id"
+docker cp "$id:/data/export" ./export
+docker rm "$id"
+```
+
+The container reads only the files you provide (it has no access to a host
+Messages database or Contacts), so it works the same on Linux, macOS, and
+Windows hosts.
 
 ## iPhone / iOS
 

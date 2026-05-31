@@ -1,5 +1,6 @@
 // Command-line entry point for imessage-exporter.
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -10,6 +11,7 @@
 #include "imsg/database.hpp"
 #include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
+#include "imsg/log.hpp"
 #include "imsg/time_util.hpp"
 
 namespace fs = std::filesystem;
@@ -38,6 +40,9 @@ void print_usage(std::ostream& os) {
        << "                   UDID, or 'latest' (unencrypted backups only)\n"
        << "  --list-backups   List available device backups and exit\n"
        << "  --list-chats     List conversations and exit\n"
+       << "  --log-level LVL  Logging verbosity: error, warn, info, debug\n"
+       << "                   (default: warn; or set IMSG_LOG_LEVEL)\n"
+       << "  -v / -vv         Shortcuts for --log-level info / debug\n"
        << "  --version        Print version and exit\n"
        << "  --help           Show this help and exit\n";
 }
@@ -81,6 +86,7 @@ bool prepare_backup(const std::string& spec, std::string& db_path,
                   << "'. Try --list-backups, or pass a backup directory path.\n";
         return false;
     }
+    imsg::log_info("using backup '" + dir + "'");
     imsg::BackupInfo info = imsg::inspect_backup(dir);
     if (info.encrypted) {
         std::cerr << "error: backup '" << info.udid << "' is encrypted, which "
@@ -142,6 +148,12 @@ int main(int argc, char** argv) {
     std::string backup_spec;
     imsg::ExportOptions opts;
 
+    // Environment first, so an explicit flag can still override it.
+    if (const char* env = std::getenv("IMSG_LOG_LEVEL")) {
+        imsg::LogLevel lvl;
+        if (imsg::parse_log_level(env, lvl)) imsg::set_log_level(lvl);
+    }
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -156,6 +168,20 @@ int main(int argc, char** argv) {
             list_backups = true;
         } else if (arg == "--backup") {
             if (!take_value(argc, argv, i, "--backup", backup_spec)) return 2;
+        } else if (arg == "--log-level") {
+            std::string v;
+            if (!take_value(argc, argv, i, "--log-level", v)) return 2;
+            imsg::LogLevel lvl;
+            if (!imsg::parse_log_level(v, lvl)) {
+                std::cerr << "error: invalid --log-level '" << v
+                          << "' (use error, warn, info, or debug)\n";
+                return 2;
+            }
+            imsg::set_log_level(lvl);
+        } else if (arg == "-v" || arg == "--verbose") {
+            imsg::set_log_level(imsg::LogLevel::Info);
+        } else if (arg == "-vv" || arg == "--debug") {
+            imsg::set_log_level(imsg::LogLevel::Debug);
         } else if (arg == "--combined") {
             opts.combined = true;
         } else if (arg == "--copy-attachments") {
