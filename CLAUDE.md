@@ -38,7 +38,10 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   ├── models.hpp       # Chat / Message / Attachment structs
 │   ├── time_util.hpp    # Apple "Mac absolute time" conversion
 │   ├── attributed_body.hpp
-│   ├── exporters.hpp    # txt / json / html renderers
+│   ├── contact_book.hpp # handle→name map (SQLite-free, in imsg_core)
+│   ├── contacts.hpp     # AddressBook loader → ContactBook (SQLite)
+│   ├── exporters.hpp    # txt / json / html renderers (+ combined)
+│   ├── export_job.hpp   # ExportOptions + export_database()
 │   └── database.hpp     # read-only chat.db reader (SQLite)
 ├── src/                 # one .cpp per header, + main.cpp (CLI)
 ├── tests/test_core.cpp  # dependency-free unit tests (33 assertions)
@@ -89,6 +92,10 @@ Run (binary at `build/imessage-exporter`):
 | `--format FMT` | `txt`, `json`, or `html`. | `txt` |
 | `--output DIR` | Output directory (one file per conversation). | `./imessage-export` |
 | `--me NAME` | Label for messages you sent. | `Me` |
+| `--since DATE` / `--until DATE` | Date-range filter (`YYYY-MM-DD[ HH:MM:SS]`); date-only `--until` is end-of-day. | — |
+| `--combined` | One combined file instead of one per conversation. | — |
+| `--copy-attachments` | Copy attachment files into `<output>/attachments` and link them. | — |
+| `--contacts` / `--contacts-db PATH` | Resolve handles to names via the default / a specific AddressBook DB. | — |
 | `--list-chats` | List conversations and exit. | — |
 | `--version` / `--help` | Print and exit. | — |
 
@@ -127,12 +134,10 @@ The reader also adapts to schema differences across macOS versions via
 ## Known gaps / good next tasks
 
 - ⚠️ **Verify against a real macOS `chat.db`.** Only synthetic data has been
-  exercised so far; the `attributedBody` decoder is the likely weak point.
-- Attachment **file copying** (currently only metadata is exported).
-- **Date-range** filtering (`--since` / `--until`).
-- **Combined** single-file export option (vs one file per chat).
-- **Contact-name resolution** from the macOS Contacts (AddressBook) DB so
-  senders show names instead of phone numbers/emails.
+  exercised so far; the `attributedBody` decoder and the Contacts/attachment
+  paths are the likely weak points. The Contacts schema (`ZABCDRECORD` /
+  `ZABCDPHONENUMBER` / `ZABCDEMAILADDRESS`) and the phone-matching heuristic
+  (last-10-digits) haven't been tried against real AddressBook data.
 
 ## Done since v0.1.0
 
@@ -148,6 +153,25 @@ The reader also adapts to schema differences across macOS versions via
 - **Security/robustness** — the `--db` path is percent-encoded before going into
   the SQLite `file:` URI; timestamp magnitude uses unsigned math (no
   `llabs(LLONG_MIN)` UB); the `attributedBody` decoder works over `string_view`.
+- **Date-range filtering** — `--since` / `--until` (`parse_date` in time_util);
+  filtering is applied in `load_messages` after Apple-time conversion, so it
+  works uniformly for nanosecond and legacy-seconds databases.
+- **Combined export** — `--combined` streams every conversation into one file via
+  the `combined_prologue` / `combined_item` / `combined_epilogue` fragment API in
+  exporters, preserving the one-chat-at-a-time memory bound.
+- **Attachment copying** — `--copy-attachments` copies files into
+  `<output>/attachments/<chat-slug>/` (dedup by source, unique dest names) and
+  sets `Attachment::copied_path`; HTML embeds images / links others, txt+json
+  reference the path. Logic lives in `export_job.cpp` (the only place with `fs`).
+- **Contact-name resolution** — `ContactBook` (SQLite-free core) maps handles to
+  names; `contacts.cpp` loads it from the macOS AddressBook (`*.abcddb`).
+  `--contacts` uses the default location, `--contacts-db PATH` a specific one;
+  `MessagesDatabase::set_contacts` resolves senders + participants. Phone keys
+  match on the last 10 digits; emails case-insensitively.
+
+  All four added options share an `ExportOptions` struct (export_job.hpp) rather
+  than growing the `export_database` parameter list; the C ABI (`imsg_export`)
+  is unchanged.
 
 ## Git
 

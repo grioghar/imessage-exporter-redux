@@ -54,6 +54,32 @@ The database is opened with `mode=ro&immutable=1` so the live Messages data is
 never modified or locked. On modern macOS the running terminal needs **Full Disk
 Access** to read `chat.db`.
 
+## Contacts (AddressBook) — optional name resolution
+
+With `--contacts` / `--contacts-db`, handles (phone numbers / emails) are
+resolved to display names from the macOS Contacts store, separate SQLite
+databases under:
+
+```
+~/Library/Application Support/AddressBook/        # scanned recursively for *.abcddb
+~/Library/Application Support/AddressBook/Sources/<UUID>/AddressBook-v22.abcddb
+```
+
+Relevant tables (`load_contacts` in `contacts.cpp`):
+
+| Table | Columns used |
+| --- | --- |
+| `ZABCDRECORD` | `Z_PK`, `ZFIRSTNAME`, `ZLASTNAME`, `ZORGANIZATION` |
+| `ZABCDPHONENUMBER` | `ZFULLNUMBER`, `ZOWNER` → `ZABCDRECORD.Z_PK` |
+| `ZABCDEMAILADDRESS` | `ZADDRESS`, `ZOWNER` → `ZABCDRECORD.Z_PK` |
+
+The display name is `first + last`, falling back to the organization. Matching
+is heuristic (`ContactBook::key_for`): emails compare case-insensitively; phone
+numbers are reduced to digits and keyed on their **last 10 digits**, so
+formatting and country-code differences between Messages and Contacts collapse
+together. Unreadable/foreign databases are skipped — a miss just falls back to
+the raw handle, and these `.abcddb` files are opened `mode=ro&immutable=1` too.
+
 ## Schema differences across versions
 
 Column availability varies between macOS releases (e.g. `attributedBody` and

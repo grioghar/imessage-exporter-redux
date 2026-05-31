@@ -69,6 +69,14 @@ std::string default_db_path() {
 MessagesDatabase::MessagesDatabase(std::string db_path, std::string me_label)
     : db_path_(std::move(db_path)), me_label_(std::move(me_label)) {}
 
+void MessagesDatabase::set_date_range(bool has_since, std::time_t since,
+                                      bool has_until, std::time_t until) {
+    has_since_ = has_since;
+    since_ = since;
+    has_until_ = has_until;
+    until_ = until;
+}
+
 MessagesDatabase::~MessagesDatabase() { close(); }
 
 void MessagesDatabase::open() {
@@ -140,8 +148,12 @@ std::vector<Chat> MessagesDatabase::load_chat_index() {
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 long long chat_id = sqlite3_column_int64(stmt, 0);
                 auto it = index.find(chat_id);
-                if (it != index.end())
-                    chats[it->second].participants.push_back(column_text(stmt, 1));
+                if (it != index.end()) {
+                    std::string handle = column_text(stmt, 1);
+                    std::string name = contacts_ ? contacts_->name_for(handle) : "";
+                    chats[it->second].participants.push_back(
+                        name.empty() ? handle : name);
+                }
             }
             sqlite3_finalize(stmt);
         }
@@ -238,10 +250,19 @@ void MessagesDatabase::load_messages(Chat& chat) {
                 m.date_read = when;
             }
 
+            // Date-range filter: a message with no usable date can't be placed
+            // in the window, so it's dropped whenever a bound is active.
+            if (has_since_ && (!m.has_date || m.date < since_)) continue;
+            if (has_until_ && (!m.has_date || m.date > until_)) continue;
+
             m.is_from_me = sqlite3_column_int(stmt, 6) != 0;
             m.service = column_text(stmt, 7);
             std::string handle = column_text(stmt, 8);
-            m.sender = m.is_from_me ? me_label_ : (handle.empty() ? "Unknown" : handle);
+            std::string name = contacts_ ? contacts_->name_for(handle) : "";
+            m.sender = m.is_from_me
+                           ? me_label_
+                           : (!name.empty() ? name
+                                            : (handle.empty() ? "Unknown" : handle));
 
             m.has_chat = true;
             m.chat_id = chat.rowid;

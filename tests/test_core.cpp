@@ -6,8 +6,10 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "imsg/attributed_body.hpp"
+#include "imsg/contact_book.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/models.hpp"
 #include "imsg/time_util.hpp"
@@ -165,6 +167,76 @@ void test_html_escaping() {
     check(!contains(out, "a < b & c > d"), "html: no raw special chars");
 }
 
+void test_parse_date() {
+    std::time_t t = 0;
+    check(imsg::parse_date("2024-06-15 12:30:45", t) &&
+              imsg::format_timestamp(t) == "2024-06-15 12:30:45",
+          "date: full datetime round-trips");
+
+    std::time_t start = 0, end = 0;
+    check(imsg::parse_date("2024-06-15", start) &&
+              imsg::format_timestamp(start) == "2024-06-15 00:00:00",
+          "date: date-only is midnight");
+    check(imsg::parse_date("2024-06-15", end, /*end_of_day=*/true) && end > start &&
+              imsg::format_timestamp(end) == "2024-06-15 23:59:59",
+          "date: end-of-day for date-only --until");
+
+    check(!imsg::parse_date("not-a-date", t), "date: rejects garbage");
+    check(!imsg::parse_date("2024-13-40", t), "date: rejects out-of-range month");
+}
+
+void test_contact_book() {
+    imsg::ContactBook b;
+    b.add("+15551234567", "Alice Example");
+    b.add("bob@example.com", "Bob");
+    check_eq(b.name_for("(555) 123-4567"), "Alice Example",
+             "contacts: phone formatting ignored");
+    check_eq(b.name_for("+1 555-123-4567"), "Alice Example",
+             "contacts: country code ignored");
+    check_eq(b.name_for("BOB@EXAMPLE.COM"), "Bob", "contacts: email case-insensitive");
+    check_eq(b.name_for("nobody@example.com"), "", "contacts: miss returns empty");
+    b.add("+15551234567", "Should Not Replace");  // first non-empty name wins
+    check_eq(b.name_for("5551234567"), "Alice Example", "contacts: first name wins");
+}
+
+void test_combined_export() {
+    std::vector<imsg::Chat> chats = {make_chat(), make_chat()};
+    chats[1].display_name = "Second Chat";
+
+    std::string j = imsg::combined_prologue(imsg::Format::Json);
+    for (std::size_t i = 0; i < chats.size(); ++i)
+        j += imsg::combined_item(chats[i], imsg::Format::Json, i);
+    j += imsg::combined_epilogue(imsg::Format::Json);
+    check(contains(j, "\"conversations\""), "combined json: wrapper key");
+    check(contains(j, "Second Chat"), "combined json: includes second chat");
+
+    std::string h = imsg::combined_prologue(imsg::Format::Html);
+    for (std::size_t i = 0; i < chats.size(); ++i)
+        h += imsg::combined_item(chats[i], imsg::Format::Html, i);
+    h += imsg::combined_epilogue(imsg::Format::Html);
+    check(h.find("<!DOCTYPE html>") != std::string::npos &&
+              h.find("<!DOCTYPE html>") == h.rfind("<!DOCTYPE html>"),
+          "combined html: exactly one document head");
+    std::size_t sections = 0, p = 0;
+    while ((p = h.find("class=\"conversation\"", p)) != std::string::npos) {
+        ++sections;
+        p += 1;
+    }
+    check(sections == 2, "combined html: two conversation sections");
+}
+
+void test_attachment_copied_path() {
+    imsg::Chat c = make_chat();  // message 3 has an image/jpeg attachment
+    c.messages[2].attachments[0].copied_path = "attachments/x/photo.jpg";
+    check(contains(imsg::render_html(c),
+                   "<img class=\"attachment\" src=\"attachments/x/photo.jpg\""),
+          "attach: html embeds copied image");
+    check(contains(imsg::render_text(c), "-> attachments/x/photo.jpg"),
+          "attach: text shows copied path");
+    check(contains(imsg::render_json(c), "\"copied_path\": \"attachments/x/photo.jpg\""),
+          "attach: json includes copied path");
+}
+
 void test_chat_title() {
     imsg::Chat c;
     c.rowid = 7;
@@ -188,6 +260,10 @@ int main() {
     test_json_escaping();
     test_html_export();
     test_html_escaping();
+    test_parse_date();
+    test_contact_book();
+    test_combined_export();
+    test_attachment_copied_path();
     test_chat_title();
 
     if (g_failures == 0) {

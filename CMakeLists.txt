@@ -17,6 +17,7 @@ add_library(imsg_core STATIC
   src/time_util.cpp
   src/attributed_body.cpp
   src/exporters.cpp
+  src/contact_book.cpp
 )
 target_include_directories(imsg_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -31,7 +32,7 @@ add_test(NAME core COMMAND imsg_tests)
 find_package(SQLite3)
 if(SQLite3_FOUND)
   # Reader + streaming export engine, shared by the CLI and the embedding bridge.
-  add_library(imsg_db STATIC src/database.cpp src/export_job.cpp)
+  add_library(imsg_db STATIC src/database.cpp src/export_job.cpp src/contacts.cpp)
   target_link_libraries(imsg_db PUBLIC imsg_core SQLite::SQLite3)
 
   # CLI binary.
