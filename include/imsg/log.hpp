@@ -3,6 +3,7 @@
 // Messages go to stderr; the four levels are Error < Warn < Info < Debug.
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace imsg {
@@ -16,6 +17,12 @@ LogLevel log_level();
 
 // Parses "error"/"warn"/"info"/"debug" (case-insensitive) or "0".."3".
 bool parse_log_level(const std::string& name, LogLevel& out);
+
+// Routes emitted messages to `sink` instead of stderr (e.g. a GUI log pane).
+// Pass nullptr to restore the default stderr writer. The threshold still
+// applies before the sink is called.
+using LogSink = std::function<void(LogLevel level, const std::string& msg)>;
+void set_log_sink(LogSink sink);
 
 // Lower-cased name of a level, for help text and echoing.
 const char* log_level_name(LogLevel level);

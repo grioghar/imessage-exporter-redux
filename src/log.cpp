@@ -2,11 +2,13 @@
 
 #include <cctype>
 #include <iostream>
+#include <utility>
 
 namespace imsg {
 namespace {
 
 LogLevel g_level = LogLevel::Warn;
+LogSink g_sink;  // when set, receives messages instead of stderr
 
 const char* tag(LogLevel level) {
     switch (level) {
@@ -22,6 +24,7 @@ const char* tag(LogLevel level) {
 
 void set_log_level(LogLevel level) { g_level = level; }
 LogLevel log_level() { return g_level; }
+void set_log_sink(LogSink sink) { g_sink = std::move(sink); }
 
 const char* log_level_name(LogLevel level) {
     switch (level) {
@@ -45,7 +48,10 @@ bool parse_log_level(const std::string& name, LogLevel& out) {
 
 void log_message(LogLevel level, const std::string& msg) {
     if (static_cast<int>(level) > static_cast<int>(g_level)) return;
-    std::cerr << "[" << tag(level) << "] " << msg << "\n";
+    if (g_sink)
+        g_sink(level, msg);
+    else
+        std::cerr << "[" << tag(level) << "] " << msg << "\n";
 }
 
 }  // namespace imsg

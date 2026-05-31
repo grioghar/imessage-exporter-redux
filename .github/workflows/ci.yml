@@ -29,6 +29,21 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  gui:
+    name: desktop GUI (Qt, linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SQLite3 + Qt6
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev qt6-base-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build GUI
+        run: cmake --build build --target imessage-exporter-gui
+
   docker:
     name: docker image
     runs-on: ubuntu-latest

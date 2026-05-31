@@ -48,7 +48,8 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   ├── export_job.hpp   # ExportOptions + export_database()
 │   └── database.hpp     # read-only chat.db reader (SQLite)
 ├── src/                 # one .cpp per header, + main.cpp (CLI)
-├── tests/test_core.cpp  # dependency-free unit tests (33 assertions)
+├── gui/                 # Qt 6 desktop app (imessage-exporter-gui) — optional
+├── tests/test_core.cpp  # dependency-free unit tests
 ├── docs/SCHEMA.md       # database schema notes & quirks — READ THIS
 ├── CMakeLists.txt
 ├── README.md
@@ -209,12 +210,16 @@ The end goal is one export engine behind many front-ends — which is why the
 SQLite-free core + `imsg_db` + the pure-C bridge (`imsg_bridge.h`) split exists.
 Planned front-ends, all calling the same `export_database()` / bridge:
 
-- **Desktop GUI** — a double-clickable `iMessage Exporter.app` (and Windows/Linux
-  equivalents): auto-detect the DB on macOS (`default_db_path` /
-  `default_backup_roots`), present format/range/output options, allow a custom
-  path. **Toolkit not yet chosen** (Qt vs wxWidgets vs native-per-platform vs a
-  localhost web UI) — this is the open decision gating GUI work. Whatever it is,
-  it should call `imsg_db`/the bridge, not reimplement logic.
+- **Desktop GUI** — **DONE (Qt 6 chosen).** `gui/` is one C++/Qt Widgets app
+  (`imessage-exporter-gui`) for macOS/Windows/Linux: source = auto-detected
+  Messages DB / a database file / a device backup; options for
+  format/output/date-range/combined/copy-attachments/contacts/log-level; export
+  runs off the UI thread via `QtConcurrent` with a `QFutureWatcher`, and the log
+  pane is fed by a `set_log_sink` callback. macOS builds it as a `MACOSX_BUNDLE`
+  named "iMessage Exporter.app". Gated on `find_package(Qt6)`; CI builds it on
+  Linux (`qt6-base-dev`). **Still TODO:** distributable bundles — macOS
+  codesign/notarize + .dmg, Windows installer, Linux AppImage — and a CI build
+  on the mac/Windows runners (only Linux compiles the GUI today).
 - **iOS app** — SwiftUI screens over the existing SwiftPM/bridge target; export
   from the imported DB or a user-picked path (the app can't read the live DB —
   see docs/IOS.md). Needs Xcode; not buildable in this repo's CI.
