@@ -20,12 +20,20 @@ let package = Package(
             name: "ImsgExporter",
             path: ".",
             sources: [
+                // SQLite-free core.
+                "src/log.cpp",
                 "src/models.cpp",
                 "src/time_util.cpp",
                 "src/attributed_body.cpp",
                 "src/exporters.cpp",
+                "src/contact_book.cpp",
+                "src/vcard.cpp",
+                // SQLite-backed reader + streaming engine.
                 "src/database.cpp",
                 "src/export_job.cpp",
+                "src/contacts.cpp",
+                "src/backup.cpp",
+                // Pure-C bridge.
                 "src/imsg_bridge.cpp",
             ],
             publicHeadersPath: "include",
