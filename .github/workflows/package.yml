@@ -1,9 +1,12 @@
 name: package
 
-# Builds self-contained desktop bundles. Run on demand (Actions -> package ->
-# Run workflow) or by pushing a v* tag. Artifacts are UNSIGNED: macOS Gatekeeper
-# and Windows SmartScreen will warn until code signing / notarization (which
-# need an Apple Developer ID / a Windows cert) are wired up — see CLAUDE.md.
+# Builds self-contained desktop installers and, for a real v* tag, publishes
+# them as a GitHub Release. Run on demand (Actions -> package -> Run workflow)
+# to just build the artifacts, or push a v* tag to also cut the release.
+#
+# Artifacts are UNSIGNED: macOS Gatekeeper and Windows SmartScreen will warn
+# until code signing / notarization (Apple Developer ID / a Windows cert) are
+# configured — see CLAUDE.md.
 on:
   workflow_dispatch:
   push:
@@ -34,7 +37,7 @@ jobs:
           path: dist/*
 
   windows:
-    name: Windows .exe (zip)
+    name: Windows installer
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,19 +47,24 @@ jobs:
         with:
           version: '6.7.*'
           cache: true
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
       - name: Build
         shell: bash
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           cmake --build build --config Release --target imessage-exporter-gui
-      - name: Bundle Qt + SQLite DLLs
+      - name: Stage app + compile installer
         shell: bash
         run: |
-          mkdir -p "dist/iMessage Exporter"
-          cp build/Release/imessage-exporter-gui.exe "dist/iMessage Exporter/"
-          cp "$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/sqlite3.dll" "dist/iMessage Exporter/" || true
-          windeployqt "dist/iMessage Exporter/imessage-exporter-gui.exe"
+          mkdir -p installer_build/staging
+          cp build/Release/imessage-exporter-gui.exe installer_build/staging/
+          cp "$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/sqlite3.dll" installer_build/staging/ || true
+          windeployqt installer_build/staging/imessage-exporter-gui.exe
+          cp packaging/windows/installer.iss installer_build/
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" installer_build/installer.iss
+          mkdir -p dist && cp installer_build/dist/iMessage-Exporter-Setup.exe dist/
       - uses: actions/upload-artifact@v4
         with:
           name: imessage-exporter-windows
@@ -114,3 +122,24 @@ jobs:
         with:
           name: imessage-exporter-linux
           path: dist/*
+
+  release:
+    name: publish release
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    # Real version tags only — test tags (e.g. v0.0.0-test) build artifacts but
+    # do not create a release.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'test')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: artifacts/**/*

@@ -200,17 +200,19 @@ to `/Applications`). CI compiles the GUI on macOS, Windows, and Linux.
 
 ### Packaged downloads
 
-The [`package`](.github/workflows/package.yml) workflow (run it from the Actions
-tab, or push a `v*` tag) builds self-contained bundles and uploads them as
-artifacts:
+The [`package`](.github/workflows/package.yml) workflow builds self-contained
+installers for all three desktops. Run it from the Actions tab to just build the
+artifacts, or push a `v*` tag to also publish them as a **GitHub Release**:
 
 - **macOS** — `iMessage Exporter.app` inside a `.dmg` (Qt bundled via `macdeployqt`).
-- **Windows** — a folder/zip with the `.exe` and its Qt + SQLite DLLs (`windeployqt`).
+- **Windows** — an **Inno Setup** installer, `iMessage-Exporter-Setup.exe`, with
+  Qt + SQLite bundled (`windeployqt`) and Start-menu / desktop shortcuts.
 - **Linux** — a single-file `.AppImage` (`linuxdeploy` + the Qt plugin).
 
 These are **unsigned**: macOS Gatekeeper and Windows SmartScreen will warn until
 code signing / notarization are configured (those need an Apple Developer ID and
-a Windows signing certificate — credentials this repo doesn't hold).
+a Windows signing certificate — credentials this repo doesn't hold). Grab the
+latest builds from the [Releases](../../releases) page.
 
 ## Docker
 

@@ -220,8 +220,11 @@ Planned front-ends, all calling the same `export_database()` / bridge:
   Linux (`qt6-base-dev`). CI now compiles the GUI on macOS/Windows/Linux
   (`jurplel/install-qt-action`; Windows gets SQLite via vcpkg). The `package`
   workflow (`.github/workflows/package.yml`, manual / on `v*` tag) builds
-  bundles: macOS `.dmg` (macdeployqt), Windows zip (windeployqt), Linux
-  `.AppImage` (linuxdeploy). **Remaining (credential-gated):** code signing +
+  installers: macOS `.dmg` (macdeployqt), Windows Inno Setup `.exe`
+  (windeployqt + ISCC, script in `packaging/windows/installer.iss`), Linux
+  `.AppImage` (linuxdeploy). On a real `v*` tag a `release` job publishes them as
+  a GitHub Release (test tags build but skip the release). **Remaining
+  (credential-gated):** code signing +
   notarization on macOS (Apple Developer ID) and a Windows signing cert — the
   bundles are unsigned until those secrets exist.
 - **iOS app** — SwiftUI screens over the existing SwiftPM/bridge target; export
