@@ -9,34 +9,13 @@
 #include <unordered_set>
 
 #include "imsg/attributed_body.hpp"
+#include "imsg/sqlite_uri.hpp"
 #include "imsg/time_util.hpp"
 
 namespace imsg {
 namespace {
 
 sqlite3* as_db(void* p) { return static_cast<sqlite3*>(p); }
-
-// Percent-encodes a filesystem path for safe inclusion in a SQLite "file:" URI.
-// Without this, a path containing '?' or '#' would be parsed as the URI's query
-// or fragment delimiter, letting a crafted path inject query parameters and
-// override the read-only/immutable open flags (e.g. "...?mode=rwc"). Everything
-// outside the RFC 3986 unreserved set (and '/') is escaped.
-std::string uri_encode_path(const std::string& path) {
-    static const char* kHex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(path.size());
-    for (unsigned char c : path) {
-        if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~' ||
-            c == '/') {
-            out += static_cast<char>(c);
-        } else {
-            out += '%';
-            out += kHex[c >> 4];
-            out += kHex[c & 0x0F];
-        }
-    }
-    return out;
-}
 
 // Reads a TEXT column, returning "" for NULL.
 std::string column_text(sqlite3_stmt* stmt, int col) {
@@ -81,7 +60,7 @@ MessagesDatabase::~MessagesDatabase() { close(); }
 
 void MessagesDatabase::open() {
     // Open read-only and immutable so the live database is never modified.
-    std::string uri = "file:" + uri_encode_path(db_path_) + "?mode=ro&immutable=1";
+    std::string uri = sqlite_ro_uri(db_path_);
     sqlite3* db = nullptr;
     int rc = sqlite3_open_v2(uri.c_str(), &db,
                              SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nullptr);

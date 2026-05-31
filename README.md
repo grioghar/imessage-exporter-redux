@@ -37,6 +37,9 @@ dependencies.
 - **Contact-name resolution** so senders show names instead of phone numbers /
   emails — from the macOS Contacts (AddressBook) database (`--contacts`) or from
   a vCard `.vcf` file exported from iCloud.com (`--contacts-db contacts.vcf`).
+- **Reads from a device backup** — point `--backup` at an unencrypted
+  iTunes/Finder backup and it extracts the messages (and contacts) to export,
+  no live database needed. `--list-backups` discovers them.
 - Correct Apple "Mac absolute time" conversion (nanoseconds **and** legacy
   seconds).
 - `--list-chats` to preview conversations without exporting.
@@ -83,7 +86,31 @@ The binary is produced at `build/imessage-exporter`.
 
 # Resolve names from a vCard exported at iCloud.com -> Contacts -> Export vCard
 ./build/imessage-exporter --format html --contacts-db ~/Downloads/iCloud-Contacts.vcf
+
+# Export from the most recent iTunes/Finder backup (with that device's contacts)
+./build/imessage-exporter --list-backups
+./build/imessage-exporter --backup latest --contacts --format html --output ./export
 ```
+
+### Where the messages come from
+
+This tool reads an existing Messages database — it does **not** log into iCloud
+(Apple exposes no API for Messages, and Messages in iCloud is end-to-end
+encrypted). There are two practical sources:
+
+1. **A Mac's local database** (default). If you're signed into Messages on a Mac
+   with **Messages in iCloud** enabled, your full history syncs down to
+   `~/Library/Messages/chat.db`, which is what the tool reads by default. The
+   terminal needs **Full Disk Access** to read it.
+2. **A device backup** (`--backup`). Make a local **unencrypted** backup of your
+   iPhone/iPad in Finder (or iTunes), then run with `--backup latest` (or a
+   backup directory / device UDID). The messages database — and, with
+   `--contacts`, the device's address book — are extracted from the backup
+   automatically. Encrypted backups aren't supported yet; turn off "Encrypt
+   local backup" and back up again.
+
+For contacts specifically, you can also skip both and feed a vCard exported from
+iCloud.com (see `--contacts-db` above).
 
 ### Options
 
@@ -99,6 +126,8 @@ The binary is produced at `build/imessage-exporter`.
 | `--copy-attachments` | Copy attachment files into `<output>/attachments` and link them. | — |
 | `--contacts` | Resolve names via the default macOS Contacts database. | — |
 | `--contacts-db PATH` | Resolve names via a specific `.abcddb` or vCard `.vcf` file (or a directory of them). | — |
+| `--backup SPEC` | Source from an iTunes/Finder backup: a directory path, a device UDID, or `latest`. Unencrypted backups only. | — |
+| `--list-backups` | List discovered device backups and exit. | — |
 | `--list-chats` | List conversations and exit (no export). | — |
 | `--version` | Print version and exit. | — |
 | `--help` | Show help and exit. | — |

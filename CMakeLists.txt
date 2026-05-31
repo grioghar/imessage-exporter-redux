@@ -33,7 +33,8 @@ add_test(NAME core COMMAND imsg_tests)
 find_package(SQLite3)
 if(SQLite3_FOUND)
   # Reader + streaming export engine, shared by the CLI and the embedding bridge.
-  add_library(imsg_db STATIC src/database.cpp src/export_job.cpp src/contacts.cpp)
+  add_library(imsg_db STATIC
+    src/database.cpp src/export_job.cpp src/contacts.cpp src/backup.cpp)
   target_link_libraries(imsg_db PUBLIC imsg_core SQLite::SQLite3)
 
   # CLI binary.

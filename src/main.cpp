@@ -1,14 +1,18 @@
 // Command-line entry point for imessage-exporter.
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "imsg/backup.hpp"
 #include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
 #include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/time_util.hpp"
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -30,9 +34,91 @@ void print_usage(std::ostream& os) {
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --contacts       Resolve names via the default macOS Contacts DB\n"
        << "  --contacts-db P  Resolve names via a specific .abcddb / .vcf file or dir\n"
+       << "  --backup SPEC    Source from an iTunes/Finder backup: a path, a device\n"
+       << "                   UDID, or 'latest' (unencrypted backups only)\n"
+       << "  --list-backups   List available device backups and exit\n"
        << "  --list-chats     List conversations and exit\n"
        << "  --version        Print version and exit\n"
        << "  --help           Show this help and exit\n";
+}
+
+// Removes its directory on scope exit; holds files extracted from a backup.
+struct ScopedTempDir {
+    fs::path path;
+    bool active = false;
+    ~ScopedTempDir() {
+        if (active) {
+            std::error_code ec;
+            fs::remove_all(path, ec);
+        }
+    }
+};
+
+void print_backups() {
+    std::vector<imsg::BackupInfo> backups = imsg::list_backups();
+    if (backups.empty()) {
+        std::cerr << "No device backups found in the default locations.\n"
+                     "Pass an explicit path with --backup <dir>.\n";
+        return;
+    }
+    std::cout << "Device backups (most recent first):\n";
+    bool first = true;
+    for (const auto& b : backups) {
+        std::cout << "  " << b.udid << (b.encrypted ? "  [encrypted]" : "")
+                  << (first ? "  (most recent)" : "") << "\n    " << b.path << "\n";
+        first = false;
+    }
+}
+
+// Resolves `spec` to a backup and extracts sms.db (and, when names are
+// requested, the device Contacts) into `work`. Sets db_path/opts on success.
+// Prints its own diagnostics; returns false on failure.
+bool prepare_backup(const std::string& spec, std::string& db_path,
+                    imsg::ExportOptions& opts, ScopedTempDir& work) {
+    std::string dir = imsg::resolve_backup(spec);
+    if (dir.empty()) {
+        std::cerr << "error: no backup found for '" << spec
+                  << "'. Try --list-backups, or pass a backup directory path.\n";
+        return false;
+    }
+    imsg::BackupInfo info = imsg::inspect_backup(dir);
+    if (info.encrypted) {
+        std::cerr << "error: backup '" << info.udid << "' is encrypted, which "
+                     "isn't supported yet.\n"
+                     "       In Finder/iTunes, turn off \"Encrypt local backup\", "
+                     "back up again, then retry.\n";
+        return false;
+    }
+
+    std::error_code ec;
+    work.path = fs::temp_directory_path(ec) / ("imessage-exporter-" + info.udid);
+    fs::create_directories(work.path, ec);
+    work.active = true;
+
+    std::string err;
+    std::string sms = (work.path / "sms.db").string();
+    if (!imsg::extract_backup_file(dir, imsg::kMessagesDomain,
+                                   imsg::kMessagesRelativePath, sms, err)) {
+        std::cerr << "error: " << err << "\n";
+        return false;
+    }
+    db_path = sms;
+
+    if (opts.use_contacts && opts.contacts_path.empty()) {
+        std::string ab = (work.path / "AddressBook.sqlitedb").string();
+        if (imsg::extract_backup_file(dir, imsg::kContactsDomain,
+                                      imsg::kContactsRelativePath, ab, err)) {
+            opts.contacts_path = ab;   // use the device's contacts...
+            opts.use_contacts = false;  // ...not this Mac's
+        } else {
+            std::cerr << "warning: could not read Contacts from backup (" << err
+                      << "); names may stay unresolved.\n";
+        }
+    }
+    if (opts.copy_attachments)
+        std::cerr << "warning: --copy-attachments has no effect with --backup "
+                     "(attachment files aren't resolved from backups yet).\n";
+    return true;
 }
 
 // Reads the value following a flag, erroring if it's missing.
@@ -52,6 +138,8 @@ int main(int argc, char** argv) {
     std::string format_name = "txt";
     std::string output_dir = "imessage-export";
     bool list_chats = false;
+    bool list_backups = false;
+    std::string backup_spec;
     imsg::ExportOptions opts;
 
     for (int i = 1; i < argc; ++i) {
@@ -64,6 +152,10 @@ int main(int argc, char** argv) {
             return 0;
         } else if (arg == "--list-chats") {
             list_chats = true;
+        } else if (arg == "--list-backups") {
+            list_backups = true;
+        } else if (arg == "--backup") {
+            if (!take_value(argc, argv, i, "--backup", backup_spec)) return 2;
         } else if (arg == "--combined") {
             opts.combined = true;
         } else if (arg == "--copy-attachments") {
@@ -103,11 +195,30 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (list_backups) {
+        print_backups();
+        return 0;
+    }
+
     imsg::Format format;
     if (!imsg::parse_format(format_name, format)) {
         std::cerr << "error: unknown format '" << format_name << "'; choose from "
                   << imsg::available_formats() << "\n";
         return 2;
+    }
+
+    // Source the database from a device backup, if requested.
+    ScopedTempDir backup_work;
+    if (!backup_spec.empty()) {
+        if (!prepare_backup(backup_spec, db_path, opts, backup_work)) return 1;
+    } else if (db_path == imsg::default_db_path() && !fs::exists(db_path)) {
+        std::cerr << "error: no Messages database at " << db_path << "\n"
+                     "Set up Messages on this Mac (enable \"Messages in iCloud\" to "
+                     "pull your full history), or\n"
+                     "pass --db <path>, or extract from a device backup with "
+                     "--backup (see --list-backups).\n"
+                     "On macOS this tool also needs Full Disk Access.\n";
+        return 1;
     }
 
     if (list_chats) {
