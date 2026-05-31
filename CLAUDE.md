@@ -39,7 +39,8 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   ├── time_util.hpp    # Apple "Mac absolute time" conversion
 │   ├── attributed_body.hpp
 │   ├── contact_book.hpp # handle→name map (SQLite-free, in imsg_core)
-│   ├── contacts.hpp     # AddressBook loader → ContactBook (SQLite)
+│   ├── vcard.hpp        # vCard (.vcf) parser → ContactBook (SQLite-free)
+│   ├── contacts.hpp     # AddressBook/.vcf loader → ContactBook (SQLite)
 │   ├── exporters.hpp    # txt / json / html renderers (+ combined)
 │   ├── export_job.hpp   # ExportOptions + export_database()
 │   └── database.hpp     # read-only chat.db reader (SQLite)
@@ -167,7 +168,11 @@ The reader also adapts to schema differences across macOS versions via
   names; `contacts.cpp` loads it from the macOS AddressBook (`*.abcddb`).
   `--contacts` uses the default location, `--contacts-db PATH` a specific one;
   `MessagesDatabase::set_contacts` resolves senders + participants. Phone keys
-  match on the last 10 digits; emails case-insensitively.
+  match on the last 10 digits; emails case-insensitively. `--contacts-db` also
+  accepts a vCard `.vcf` (parsed by the SQLite-free `vcard.cpp`) — the no-Mac
+  route for iCloud contacts (iCloud.com → Contacts → Export vCard). There is no
+  web/API path for *messages* (no Messages web app + E2E encryption), so message
+  history must come from a synced `chat.db` or a device backup.
 
   All four added options share an `ExportOptions` struct (export_job.hpp) rather
   than growing the `export_database` parameter list; the C ABI (`imsg_export`)

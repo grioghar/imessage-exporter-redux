@@ -34,8 +34,9 @@ dependencies.
 - **Date-range filtering** with `--since` / `--until`.
 - **Copies attachment files** into the export and links them (HTML embeds images)
   with `--copy-attachments`; otherwise only metadata is exported.
-- **Contact-name resolution** from the macOS Contacts (AddressBook) database, so
-  senders show names instead of phone numbers / emails (`--contacts`).
+- **Contact-name resolution** so senders show names instead of phone numbers /
+  emails — from the macOS Contacts (AddressBook) database (`--contacts`) or from
+  a vCard `.vcf` file exported from iCloud.com (`--contacts-db contacts.vcf`).
 - Correct Apple "Mac absolute time" conversion (nanoseconds **and** legacy
   seconds).
 - `--list-chats` to preview conversations without exporting.
@@ -79,6 +80,9 @@ The binary is produced at `build/imessage-exporter`.
 
 # Only messages from 2023, as JSON
 ./build/imessage-exporter --format json --since 2023-01-01 --until 2023-12-31
+
+# Resolve names from a vCard exported at iCloud.com -> Contacts -> Export vCard
+./build/imessage-exporter --format html --contacts-db ~/Downloads/iCloud-Contacts.vcf
 ```
 
 ### Options
@@ -94,7 +98,7 @@ The binary is produced at `build/imessage-exporter`.
 | `--combined` | Write one combined file instead of one per conversation. | — |
 | `--copy-attachments` | Copy attachment files into `<output>/attachments` and link them. | — |
 | `--contacts` | Resolve names via the default macOS Contacts database. | — |
-| `--contacts-db PATH` | Resolve names via a specific AddressBook `.abcddb` file or directory. | — |
+| `--contacts-db PATH` | Resolve names via a specific `.abcddb` or vCard `.vcf` file (or a directory of them). | — |
 | `--list-chats` | List conversations and exit (no export). | — |
 | `--version` | Print version and exit. | — |
 | `--help` | Show help and exit. | — |

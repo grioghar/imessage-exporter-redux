@@ -80,6 +80,18 @@ formatting and country-code differences between Messages and Contacts collapse
 together. Unreadable/foreign databases are skipped — a miss just falls back to
 the raw handle, and these `.abcddb` files are opened `mode=ro&immutable=1` too.
 
+### vCard (`.vcf`) — no Mac required
+
+`--contacts-db` also accepts a vCard file (or a directory of them), which is the
+simplest way to pull iCloud contacts without a Mac: **iCloud.com → Contacts →
+select all → Export vCard**, then point `--contacts-db` at the downloaded
+`.vcf`. The parser (`parse_vcards` in `vcard.cpp`, SQLite-free) reads each
+`BEGIN/END:VCARD` block's `FN`/`N`/`ORG` for the name and `TEL`/`EMAIL` for the
+handles, handling line folding, CRLF/LF, property parameters, and `item1.`
+group prefixes. (There is no web client for *messages* — iCloud.com has no
+Messages app — so message history still has to come from a synced `chat.db` or
+a device backup.)
+
 ## Schema differences across versions
 
 Column availability varies between macOS releases (e.g. `attributedBody` and

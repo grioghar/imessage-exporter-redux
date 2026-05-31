@@ -5,8 +5,12 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
+
+#include "imsg/vcard.hpp"
 
 namespace fs = std::filesystem;
 
@@ -84,8 +88,22 @@ void load_one_db(const std::string& db_path, ContactBook& book) {
     sqlite3_close(db);
 }
 
-// All `.abcddb` files at or under `path` (which may itself be a file).
-std::vector<std::string> find_abcddb(const std::string& path) {
+// Reads an entire vCard file and parses it into `book`.
+void load_vcf(const std::string& path, ContactBook& book) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return;
+    std::string text((std::istreambuf_iterator<char>(in)),
+                     std::istreambuf_iterator<char>());
+    parse_vcards(text, book);
+}
+
+bool is_contact_file(const fs::path& p) {
+    return p.extension() == ".abcddb" || p.extension() == ".vcf";
+}
+
+// All contact source files (`.abcddb` / `.vcf`) at or under `path`, which may
+// itself be a single file (used regardless of extension).
+std::vector<std::string> find_contact_files(const std::string& path) {
     std::vector<std::string> out;
     std::error_code ec;
     if (fs::is_regular_file(path, ec)) {
@@ -96,7 +114,7 @@ std::vector<std::string> find_abcddb(const std::string& path) {
     for (fs::recursive_directory_iterator it(path, ec), end; it != end;
          it.increment(ec)) {
         if (ec) break;
-        if (it->is_regular_file(ec) && it->path().extension() == ".abcddb")
+        if (it->is_regular_file(ec) && is_contact_file(it->path()))
             out.push_back(it->path().string());
     }
     return out;
@@ -106,7 +124,12 @@ std::vector<std::string> find_abcddb(const std::string& path) {
 
 ContactBook load_contacts(const std::string& path) {
     ContactBook book;
-    for (const std::string& db : find_abcddb(path)) load_one_db(db, book);
+    for (const std::string& file : find_contact_files(path)) {
+        if (fs::path(file).extension() == ".vcf")
+            load_vcf(file, book);
+        else
+            load_one_db(file, book);  // .abcddb, or an explicit file of any name
+    }
     return book;
 }
 
