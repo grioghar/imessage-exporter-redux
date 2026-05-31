@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace imsg {
@@ -18,7 +19,7 @@ constexpr std::array<std::size_t, 3> kHeaderOffsets = {5, 6, 4};
 
 // Reject runs containing low control characters (excluding tab/newline), which
 // indicate the payload start was mis-located.
-bool looks_like_garbage(const std::string& s) {
+bool looks_like_garbage(std::string_view s) {
     for (unsigned char c : s) {
         if (c < 0x09) return true;
     }
@@ -26,7 +27,7 @@ bool looks_like_garbage(const std::string& s) {
 }
 
 // Validates that the bytes form well-formed UTF-8.
-bool is_valid_utf8(const std::string& s) {
+bool is_valid_utf8(std::string_view s) {
     std::size_t i = 0;
     const std::size_t n = s.size();
     while (i < n) {
@@ -53,7 +54,8 @@ bool is_valid_utf8(const std::string& s) {
 }
 
 // Parses the length-prefixed UTF-8 string that follows a class marker.
-std::string read_inline_string(const std::string& payload) {
+// Operates on a view into the original blob; only the returned text allocates.
+std::string read_inline_string(std::string_view payload) {
     for (std::size_t offset : kHeaderOffsets) {
         if (offset >= payload.size()) continue;
 
@@ -72,10 +74,30 @@ std::string read_inline_string(const std::string& payload) {
         if (length == 0) continue;
         if (body_start + length > payload.size()) continue;
 
-        std::string text = payload.substr(body_start, length);
+        std::string_view text = payload.substr(body_start, length);
         if (!text.empty() && is_valid_utf8(text) && !looks_like_garbage(text)) {
-            return text;
+            return std::string(text);
         }
+    }
+    return std::string();
+}
+
+// Shared implementation over a view, so neither public overload copies the blob.
+std::string decode_impl(std::string_view data) {
+    if (data.empty()) return std::string();
+
+    // Trailing attribute runs follow an NSDictionary/NSNumber; dropping from the
+    // first such marker avoids decoding archiver metadata as text.
+    for (const char* tail : {"NSDictionary", "NSNumber"}) {
+        std::size_t idx = data.find(tail);
+        if (idx != std::string_view::npos) data = data.substr(0, idx);
+    }
+
+    for (const std::string& marker : kMarkers) {
+        std::size_t idx = data.find(marker);
+        if (idx == std::string_view::npos) continue;
+        std::string text = read_inline_string(data.substr(idx + marker.size()));
+        if (!text.empty()) return text;
     }
     return std::string();
 }
@@ -84,29 +106,11 @@ std::string read_inline_string(const std::string& payload) {
 
 std::string decode_attributed_body(const unsigned char* data, std::size_t len) {
     if (data == nullptr || len == 0) return std::string();
-    std::string blob(reinterpret_cast<const char*>(data), len);
-    return decode_attributed_body(blob);
+    return decode_impl(std::string_view(reinterpret_cast<const char*>(data), len));
 }
 
 std::string decode_attributed_body(const std::string& blob) {
-    if (blob.empty()) return std::string();
-
-    std::string data = blob;
-    // Trailing attribute runs follow an NSDictionary/NSNumber; dropping from the
-    // first such marker avoids decoding archiver metadata as text.
-    for (const char* tail : {"NSDictionary", "NSNumber"}) {
-        std::size_t idx = data.find(tail);
-        if (idx != std::string::npos) data = data.substr(0, idx);
-    }
-
-    for (const std::string& marker : kMarkers) {
-        std::size_t idx = data.find(marker);
-        if (idx == std::string::npos) continue;
-        std::string payload = data.substr(idx + marker.size());
-        std::string text = read_inline_string(payload);
-        if (!text.empty()) return text;
-    }
-    return std::string();
+    return decode_impl(std::string_view(blob));
 }
 
 }  // namespace imsg
