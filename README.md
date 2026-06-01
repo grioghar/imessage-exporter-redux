@@ -231,6 +231,29 @@ code signing / notarization are configured (those need an Apple Developer ID and
 a Windows signing certificate — credentials this repo doesn't hold). Grab the
 latest builds from the [Releases](../../releases) page.
 
+### Package managers
+
+Packaging definitions live in [`packaging/`](packaging/):
+
+- **Homebrew** (macOS/Linux) — a formula for the CLI and a cask for the GUI:
+
+  ```bash
+  brew tap grioghar/tap https://github.com/grioghar/homebrew-tap
+  brew install grioghar/tap/imessage-exporter           # CLI
+  brew install --cask grioghar/tap/imessage-exporter-app # GUI (.app; add --no-quarantine while unsigned)
+  ```
+
+- **Chocolatey** (Windows) — installs the Inno Setup build silently:
+
+  ```powershell
+  choco install imessage-exporter
+  ```
+
+Publishing requires a one-time setup: create a `grioghar/homebrew-tap` repo and
+copy the two `.rb` files in (filling the release `sha256`); for Chocolatey,
+`choco pack packaging/chocolatey/imessage-exporter.nuspec` then `choco push` with
+your community API key (set the installer checksum first).
+
 ## Docker
 
 A multi-stage [`Dockerfile`](Dockerfile) builds the Linux CLI (the image runs

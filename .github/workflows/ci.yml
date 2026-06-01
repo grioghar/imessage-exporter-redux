@@ -78,3 +78,31 @@ jobs:
         run: |
           docker run --rm imessage-exporter:ci --version
           docker run --rm imessage-exporter:ci --help
+
+  package-defs:
+    name: packaging definitions (brew/choco)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Homebrew formula/cask syntax
+        run: |
+          ruby -c packaging/homebrew/imessage-exporter.rb
+          ruby -c packaging/homebrew/imessage-exporter-app.rb
+
+      - name: Chocolatey nuspec is well-formed XML
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          xmllint --noout packaging/chocolatey/imessage-exporter.nuspec
+
+      - name: Chocolatey PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem packaging/chocolatey/tools/*.ps1 | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.PSParser]::Tokenize(
+              (Get-Content -Raw $_.FullName), [ref]$errors) | Out-Null
+            if ($errors.Count) { Write-Error "Parse errors in $($_.Name)"; $bad = 1 }
+          }
+          exit $bad
