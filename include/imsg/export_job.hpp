@@ -3,7 +3,9 @@
 #pragma once
 
 #include <ctime>
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "imsg/exporters.hpp"  // Format
 
@@ -42,6 +44,18 @@ struct ExportOptions {
     // Contacts). Empty store_path means the default per-user location.
     bool use_contact_store = false;
     std::string contact_store_path;
+
+    // Only export conversations that include at least one of these participants
+    // (matched against the chat's participant list / title). Empty = all chats.
+    std::vector<std::string> only_participants;
+
+    // Skip conversations whose output file already exists (used to resume an
+    // interrupted job without redoing finished files).
+    bool skip_existing = false;
+
+    // Called after each conversation with (processed, total) for progress / for
+    // persisting a resume index. May be null.
+    std::function<void(int processed, int total)> on_progress;
 };
 
 struct ExportSummary {

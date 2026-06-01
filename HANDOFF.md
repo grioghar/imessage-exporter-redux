@@ -97,8 +97,16 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
     macOS `security` CLI, Windows Credential Manager (CredW*, links advapi32),
     Linux 0600 file fallback (libsecret could replace it later). Contacts cache
     stays plain SQLite (keychain-for-tokens-only, per the user's choice).
-  - REMAINING for the 0.2.3 release: bump version to 0.2.3, tag, refresh
-    brew/choco. Live OAuth/keychain are compile-validated only (no creds in CI).
+  - ALSO in 0.2.3 (this batch): GUI settings persist across versions (QSettings
+    `ui/*`); "From" date with no "To" exports through now (no upper bound);
+    live per-attachment copy/embed logging in the export pane; job tracking with
+    close-confirmation + resume of an interrupted job and recovery after an
+    unclean shutdown (QSettings `job/*` + `skip_existing` + `on_progress`); and a
+    "Select people…" picker that limits export to chosen participants
+    (`only_participants`). Version bumped to 0.2.3 (0.2.3 was never tagged, so
+    this single release bundles the store + Google + this batch).
+  - REMAINING: tag v0.2.3, refresh brew/choco. Live OAuth/keychain + the GUI
+    job/resume flow are compile-validated only (no creds/desktop in CI).
 - Previously released: **v0.2.1** — six installers (macOS `.dmg`, Windows
   `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
   Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),
