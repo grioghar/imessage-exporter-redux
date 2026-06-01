@@ -3,8 +3,8 @@
 # The build is unsigned, so add `--no-quarantine` until notarization is set up.
 # Update `version` + `sha256` on each release.
 cask "imessage-exporter-app" do
-  version "0.2.1"
-  sha256 "d919f9ade92653a6c2b26fd21a1016406fdea8e24a0c754cfb2f6b0b55976f40"
+  version "0.2.2"
+  sha256 "df4681c9df025c40be4ed10ae52a0ee89417caaab0b16748f8f831a9e61dab7a"
 
   url "https://github.com/grioghar/imessage-exporter-redux/releases/download/v#{version}/iMessage-Exporter-macOS.dmg"
   name "iMessage Exporter"
