@@ -149,9 +149,67 @@ jobs:
           name: imessage-exporter-linux
           path: dist/*
 
+  deb:
+    name: Linux .deb (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps (distro Qt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ qt6-base-dev libqt6svg6-dev \
+            libgl1-mesa-dev libsqlite3-dev dpkg-dev file
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Package (.deb)
+        run: |
+          ( cd build && cpack -G DEB )
+          mkdir -p dist && cp build/*.deb dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imessage-exporter-deb
+          path: dist/*
+
+  rpm:
+    name: Linux .rpm (Fedora/RHEL)
+    runs-on: ubuntu-latest
+    container: fedora:40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps (distro Qt)
+        run: |
+          dnf install -y cmake gcc-c++ qt6-qtbase-devel qt6-qtsvg-devel \
+            sqlite-devel mesa-libGL-devel rpm-build
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Package (.rpm)
+        run: |
+          ( cd build && cpack -G RPM )
+          mkdir -p dist && cp build/*.rpm dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imessage-exporter-rpm
+          path: dist/*
+
+  snap:
+    name: Linux Snap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imessage-exporter-snap
+          path: ${{ steps.snapcraft.outputs.snap }}
+
   release:
     name: publish release
-    needs: [macos, windows, linux]
+    needs: [macos, windows, linux, deb, rpm, snap]
     runs-on: ubuntu-latest
     # Real version tags only — test tags (e.g. v0.0.0-test) build artifacts but
     # do not create a release.

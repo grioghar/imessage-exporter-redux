@@ -1,5 +1,7 @@
 #include "main_window.hpp"
 
+#include <QAction>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDate>
@@ -20,7 +22,9 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QtConcurrent>
@@ -33,6 +37,7 @@
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
 #include "imsg/time_util.hpp"
+#include "imsg/version.hpp"
 
 namespace {
 // Index conventions for the source / contacts combo boxes.
@@ -187,6 +192,14 @@ MainWindow::MainWindow()
             QUrl("https://github.com/grioghar/imessage-exporter-redux/issues"));
     });
     helpMenu->addSeparator();
+    QAction* autoUpdate = helpMenu->addAction("Automatically check for updates");
+    autoUpdate->setCheckable(true);
+    autoUpdate->setChecked(QSettings().value("updates/autoCheck", true).toBool());
+    connect(autoUpdate, &QAction::toggled, this,
+            [](bool on) { QSettings().setValue("updates/autoCheck", on); });
+    helpMenu->addAction("Check for updates now", this,
+                        [this] { runUpdateCheck(true); });
+    helpMenu->addSeparator();
     helpMenu->addAction("About iMessage Exporter", this, &MainWindow::showAbout);
 
     auto* root = new QVBoxLayout(this);
@@ -212,6 +225,45 @@ MainWindow::MainWindow()
             &MainWindow::exportFinished);
     connect(&icloudWatcher_, &QFutureWatcher<icloud::Result>::finished, this,
             &MainWindow::icloudFinished);
+
+    // --- Auto-update ---------------------------------------------------------
+    updater_ = new Updater(this);
+    connect(updater_, &Updater::updateAvailable, this,
+            [this](const QString& version, const QString&, QUrl asset, QString) {
+                status_->setText("Downloading update " + version + "…");
+                updater_->download(asset, version);
+            });
+    connect(updater_, &Updater::updateDownloaded, this,
+            [this](const QString& path, const QString& version) {
+                if (QMessageBox::question(
+                        this, "Update ready",
+                        "Version " + version +
+                            " has been downloaded.\n\nInstall it and restart now?") !=
+                    QMessageBox::Yes) {
+                    status_->setText("Update " + version + " is ready to install.");
+                    return;
+                }
+                if (updater_->installAndRestart(path))
+                    QApplication::quit();
+                else
+                    QMessageBox::information(
+                        this, "Update",
+                        "The update was opened. Finish installing it (or update via "
+                        "your package manager), then reopen the app.");
+            });
+    connect(updater_, &Updater::upToDate, this, [this] {
+        if (manualUpdateCheck_)
+            QMessageBox::information(this, "Up to date",
+                                     "You already have the latest version.");
+    });
+    connect(updater_, &Updater::failed, this, [this](const QString& error) {
+        if (manualUpdateCheck_)
+            QMessageBox::warning(this, "Update check failed", error);
+        else
+            status_->setText("Update check failed.");
+    });
+    if (QSettings().value("updates/autoCheck", true).toBool())
+        QTimer::singleShot(1500, this, [this] { runUpdateCheck(false); });
 
     onSourceChanged();
     onContactsChanged();
@@ -531,10 +583,16 @@ void MainWindow::showHowToGetData() {
         "online documentation</a>.</p>");
 }
 
+void MainWindow::runUpdateCheck(bool manual) {
+    manualUpdateCheck_ = manual;
+    if (manual) status_->setText("Checking for updates…");
+    updater_->checkForUpdates();
+}
+
 void MainWindow::showAbout() {
     richTextDialog(
         this, "About iMessage Exporter",
-        "<h3>iMessage Exporter 0.1.0</h3>"
+        "<h3>iMessage Exporter " IMSG_VERSION "</h3>"
         "<p>Export macOS iMessage / SMS history to TXT, JSON, or HTML.</p>"
         "<p>A small, fast C++ tool with a Qt desktop front-end, sharing one "
         "export engine across the CLI, desktop, and iOS.</p>"

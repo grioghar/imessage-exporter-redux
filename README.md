@@ -217,7 +217,14 @@ artifacts, or push a `v*` tag to also publish them as a **GitHub Release**:
 - **macOS** — `iMessage Exporter.app` inside a `.dmg` (Qt bundled via `macdeployqt`).
 - **Windows** — an **Inno Setup** installer, `iMessage-Exporter-Setup.exe`, with
   Qt + SQLite bundled (`windeployqt`) and Start-menu / desktop shortcuts.
-- **Linux** — a single-file `.AppImage` (`linuxdeploy` + the Qt plugin).
+- **Linux** — a single-file `.AppImage`, plus a **`.deb`** (Debian/Ubuntu), an
+  **`.rpm`** (Fedora/RHEL), and a **Snap** (`snap/snapcraft.yaml`).
+
+The desktop app can **update itself**: Help → "Automatically check for updates"
+(on by default) checks GitHub Releases on launch, quietly downloads the right
+installer, and offers to install + restart. On Windows it runs the installer
+silently; on a Linux AppImage it self-replaces and re-execs; on macOS and distro
+packages (deb/rpm/snap) it opens the download / defers to your package manager.
 
 These are **unsigned**: macOS Gatekeeper and Windows SmartScreen will warn until
 code signing / notarization are configured (those need an Apple Developer ID and

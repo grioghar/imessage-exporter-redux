@@ -1,0 +1,39 @@
+name: imessage-exporter
+base: core22
+version: '0.2.0'
+summary: Export macOS iMessage/SMS history
+description: |
+  A small, fast C++ tool with a Qt desktop UI to export a macOS Messages
+  database (chat.db) — copied from a Mac or extracted from a device backup —
+  to TXT, JSON, or HTML. Also resolves contact names and copies attachments.
+
+grade: stable
+confinement: strict
+
+apps:
+  imessage-exporter:
+    command: usr/bin/imessage-exporter-gui
+    extensions: [kde-neon-6]
+    plugs:
+      - home
+      - network
+      - removable-media
+  imessage-exporter-cli:
+    command: usr/bin/imessage-exporter
+    extensions: [kde-neon-6]
+    plugs:
+      - home
+      - network
+      - removable-media
+
+parts:
+  imessage-exporter:
+    plugin: cmake
+    source: .
+    cmake-parameters:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/usr
+    build-packages:
+      - libsqlite3-dev
+    stage-packages:
+      - libsqlite3-0

@@ -14,6 +14,7 @@
 
 #include "icloud_contacts.hpp"
 #include "imsg/export_job.hpp"
+#include "updater.hpp"
 
 class QComboBox;
 class QLineEdit;
@@ -43,6 +44,7 @@ class MainWindow : public QWidget {
     void icloudFinished();
     void showHowToGetData();
     void showAbout();
+    void runUpdateCheck(bool manual);
 
    private:
     // Validates the form and fills the engine inputs; returns false (+ message)
@@ -84,4 +86,7 @@ class MainWindow : public QWidget {
     std::shared_ptr<std::vector<std::string>> logBuffer_;
     QTemporaryDir tempDir_;  // holds files extracted from a backup
     QString lastOutputDir_;
+
+    Updater* updater_ = nullptr;
+    bool manualUpdateCheck_ = false;  // true when the user clicked "Check now"
 };

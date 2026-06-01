@@ -7,6 +7,7 @@
 #include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
+#include "imsg/version.hpp"
 
 namespace {
 
@@ -50,4 +51,4 @@ extern "C" void imsg_set_log_level(int level) {
     imsg::set_log_level(static_cast<imsg::LogLevel>(level));
 }
 
-extern "C" const char* imsg_version(void) { return "0.1.0"; }
+extern "C" const char* imsg_version(void) { return IMSG_VERSION; }
