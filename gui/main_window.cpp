@@ -51,6 +51,7 @@
 #include "imsg/build_stamp.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
+#include "secret_store.hpp"
 
 namespace {
 // Index conventions for the source / contacts combo boxes.
@@ -228,6 +229,7 @@ MainWindow::MainWindow()
     auto* menuBar = new QMenuBar;
     QMenu* helpMenu = menuBar->addMenu("&Help");
     helpMenu->addAction("How to get your data…", this, &MainWindow::showHowToGetData);
+    helpMenu->addAction("Google Contacts setup…", this, &MainWindow::showGoogleSetup);
     helpMenu->addAction("Online documentation", this, [] {
         QDesktopServices::openUrl(
             QUrl("https://github.com/grioghar/imessage-exporter-redux#readme"));
@@ -333,17 +335,7 @@ MainWindow::MainWindow()
         status_->setText("Google import failed.");
         QMessageBox::warning(this, "Google Contacts", e);
     });
-    connect(googleBtn_, &QPushButton::clicked, this, [this] {
-        if (!GoogleContacts::configured()) {
-            QMessageBox::information(
-                this, "Google Contacts",
-                "To enable this, create a Google Cloud OAuth \"Desktop app\" client "
-                "for the People API and set IMSG_GOOGLE_CLIENT_ID (and "
-                "IMSG_GOOGLE_CLIENT_SECRET) in your environment, then restart.");
-            return;
-        }
-        google_->connectAndDownload();
-    });
+    connect(googleBtn_, &QPushButton::clicked, this, &MainWindow::connectGoogle);
 
     onSourceChanged();
     onContactsChanged();
@@ -356,7 +348,7 @@ void MainWindow::onSourceChanged() {
     const bool file = (s == SrcFile);
     const bool backup = (s == SrcBackup);
     dbPath_->setEnabled(file);
-    dbBrowse_->setEnabled(file);
+    dbBrowse_->setEnabled(true);  // always browsable; picking a file switches mode
     backup_->setEnabled(backup);
 }
 
@@ -367,9 +359,14 @@ void MainWindow::onContactsChanged() {
 }
 
 void MainWindow::browseDatabase() {
-    QString f = QFileDialog::getOpenFileName(this, "Choose a Messages database",
-                                             QDir::homePath());
-    if (!f.isEmpty()) dbPath_->setText(f);
+    QString f = QFileDialog::getOpenFileName(
+        this, "Choose a Messages database (chat.db / sms.db)", QDir::homePath(),
+        "Databases (*.db *.sqlite *.sqlitedb);;All files (*)");
+    if (f.isEmpty()) return;
+    dbPath_->setText(f);
+    const int idx = source_->findData(SrcFile);  // auto-switch Source to "Database file"
+    if (idx >= 0) source_->setCurrentIndex(idx);
+    onSourceChanged();
 }
 
 void MainWindow::browseOutput() {
@@ -996,6 +993,74 @@ void MainWindow::showHowToGetData() {
         "<p>Full guide in the "
         "<a href=\"https://github.com/grioghar/imessage-exporter-redux#readme\">"
         "online documentation</a>.</p>");
+}
+
+void MainWindow::showGoogleSetup() {
+    richTextDialog(
+        this, "Google Contacts setup",
+        "<h3>Create a Google OAuth client (one-time)</h3>"
+        "<ol>"
+        "<li>Open the <a href=\"https://console.cloud.google.com/\">Google Cloud "
+        "Console</a> and create or select a project.</li>"
+        "<li><b>APIs &amp; Services → Library</b> → search <b>People API</b> → "
+        "<b>Enable</b>.</li>"
+        "<li><b>APIs &amp; Services → OAuth consent screen</b>: choose "
+        "<b>External</b>, fill in the app name + your email, add the scope "
+        "<code>.../auth/contacts.readonly</code>, and add your own Google address "
+        "under <b>Test users</b>.</li>"
+        "<li><b>APIs &amp; Services → Credentials → Create Credentials → OAuth "
+        "client ID</b>, Application type <b>Desktop app</b>.</li>"
+        "<li>Copy the <b>Client ID</b> and <b>Client secret</b> and paste them into "
+        "the \"Connect Google Contacts\" dialog.</li>"
+        "</ol>"
+        "<p>The secret is stored in your OS keychain; only read-only contacts are "
+        "accessed, and nothing goes anywhere except Google.</p>"
+        "<p>Full guide: <a href=\"https://github.com/grioghar/imessage-exporter-redux/"
+        "blob/main/docs/GOOGLE.md\">docs/GOOGLE.md</a>.</p>");
+}
+
+void MainWindow::connectGoogle() {
+    QDialog dlg(this);
+    dlg.setWindowTitle("Connect Google Contacts");
+    auto* form = new QFormLayout(&dlg);
+    auto* info = new QLabel(
+        "Sign in to Google to download your contacts. This needs a Google Cloud "
+        "OAuth <b>Desktop app</b> client for the People API — see <b>Help → Google "
+        "Contacts setup…</b> (or the \"Setup help\" button below).",
+        &dlg);
+    info->setTextFormat(Qt::RichText);
+    info->setWordWrap(true);
+    form->addRow(info);
+
+    auto* idField = new QLineEdit(QSettings().value("google/clientId").toString(), &dlg);
+    idField->setPlaceholderText("xxxxxxxx.apps.googleusercontent.com");
+    auto* secretField = new QLineEdit(secret::retrieve("google_client_secret"), &dlg);
+    secretField->setEchoMode(QLineEdit::Password);
+    secretField->setPlaceholderText("client secret");
+    form->addRow("Client ID:", idField);
+    form->addRow("Client secret:", secretField);
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText("Connect");
+    QPushButton* setupBtn = buttons->addButton("Setup help", QDialogButtonBox::HelpRole);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(setupBtn, &QPushButton::clicked, this, &MainWindow::showGoogleSetup);
+    form->addRow(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QString id = idField->text().trimmed();
+    const QString sec = secretField->text().trimmed();
+    if (id.isEmpty()) {
+        QMessageBox::warning(this, "Google Contacts",
+                             "A Client ID is required (see Setup help).");
+        return;
+    }
+    QSettings().setValue("google/clientId", id);
+    if (!sec.isEmpty()) secret::store("google_client_secret", sec);
+    status_->setText("Connecting to Google…");
+    google_->connectAndDownload();
 }
 
 void MainWindow::runUpdateCheck(bool manual) {
