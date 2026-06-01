@@ -15,6 +15,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QTextDocument>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -24,6 +26,8 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPageSize>
+#include <QPdfWriter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSet>
@@ -111,9 +115,15 @@ MainWindow::MainWindow()
     if (backup_->count() == 0) backup_->addItem("(no backups found)", QString());
     form->addRow("Backup:", backup_);
 
+    copyDbBtn_ = new QPushButton("Copy Messages data to a local cache…");
+    copyDbBtn_->setToolTip("Copy chat.db to a folder this app can always read, so "
+                           "you don't need Full Disk Access on every run. (The copy "
+                           "itself needs read access once.)");
+    form->addRow("", copyDbBtn_);
+
     // --- Options ------------------------------------------------------------
     format_ = new QComboBox;
-    format_->addItems({"txt", "json", "html"});
+    format_->addItems({"txt", "md", "html", "json", "pdf"});
     format_->setCurrentText("html");
     form->addRow("Format:", format_);
 
@@ -257,6 +267,7 @@ MainWindow::MainWindow()
     connect(icloudBtn_, &QPushButton::clicked, this,
             &MainWindow::importICloudContacts);
     connect(peopleBtn_, &QPushButton::clicked, this, &MainWindow::pickPeople);
+    connect(copyDbBtn_, &QPushButton::clicked, this, &MainWindow::copyMessagesData);
     connect(&watcher_, &QFutureWatcher<imsg::ExportSummary>::finished, this,
             &MainWindow::exportFinished);
     connect(&icloudWatcher_, &QFutureWatcher<icloud::Result>::finished, this,
@@ -382,7 +393,10 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
         error = "Please choose an output folder.";
         return false;
     }
-    if (!imsg::parse_format(format_->currentText().toStdString(), fmt)) {
+    // PDF is produced by converting HTML output (Qt), so ask the engine for HTML.
+    if (format_->currentText() == "pdf") {
+        fmt = imsg::Format::Html;
+    } else if (!imsg::parse_format(format_->currentText().toStdString(), fmt)) {
         error = "Unknown format.";
         return false;
     }
@@ -495,6 +509,16 @@ void MainWindow::startExportResuming(bool resume) {
     }
     resuming_ = resume;
     opts.skip_existing = resume;  // resume: don't redo finished conversation files
+
+    // PDF: write HTML to a temp dir now; convert to PDF in exportFinished().
+    wantPdf_ = (format_->currentText() == "pdf");
+    if (wantPdf_) {
+        pdfRealOut_ = QString::fromStdString(out_dir);
+        pdfHtmlDir_ = tempDir_.isValid() ? tempDir_.filePath("pdf-html")
+                                         : QDir::tempPath() + "/imsg-pdf-html";
+        QDir().mkpath(pdfHtmlDir_);
+        out_dir = pdfHtmlDir_.toStdString();
+    }
 
     imsg::LogLevel lvl;
     if (imsg::parse_log_level(logLevel_->currentText().toStdString(), lvl))
@@ -624,6 +648,29 @@ void MainWindow::exportFinished() {
         QMessageBox::information(this, "Nothing exported",
                                  "No conversations with messages were found "
                                  "(check the date range or source).");
+        return;
+    }
+
+    // PDF: convert the intermediate HTML files into PDFs in the chosen folder.
+    if (wantPdf_) {
+        QDir().mkpath(pdfRealOut_);
+        int made = 0;
+        const QFileInfoList htmls =
+            QDir(pdfHtmlDir_).entryInfoList({"*.html"}, QDir::Files);
+        for (const QFileInfo& fi : htmls) {
+            QFile f(fi.absoluteFilePath());
+            if (!f.open(QIODevice::ReadOnly)) continue;
+            QTextDocument doc;
+            doc.setHtml(QString::fromUtf8(f.readAll()));
+            f.close();
+            QPdfWriter writer(QDir(pdfRealOut_).filePath(fi.completeBaseName() + ".pdf"));
+            writer.setPageSize(QPageSize(QPageSize::A4));
+            doc.print(&writer);
+            ++made;
+        }
+        lastOutputDir_ = pdfRealOut_;
+        status_->setText(QString("Exported %1 PDF(s).").arg(made));
+        openBtn_->setEnabled(true);
         return;
     }
 
@@ -804,6 +851,44 @@ void MainWindow::pickPeople() {
     peopleLabel_->setText(selectedPeople_.isEmpty()
                               ? "All conversations"
                               : QString("%1 selected").arg(selectedPeople_.size()));
+}
+
+void MainWindow::copyMessagesData() {
+    const QString src =
+        (source_->currentData().toInt() == SrcFile && !dbPath_->text().isEmpty())
+            ? dbPath_->text()
+            : QString::fromStdString(imsg::default_db_path());
+    if (!QFile::exists(src)) {
+        QMessageBox::warning(this, "Copy Messages data",
+                             "No Messages database found at:\n" + src);
+        return;
+    }
+    const QString destDir =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
+            .filePath("messages");
+    QDir().mkpath(destDir);
+    const QString dest = QDir(destDir).filePath("chat.db");
+    QFile::remove(dest);
+    if (!QFile::copy(src, dest)) {
+        showExportError(
+            "Could not read " + src +
+                ".\nOn macOS the live Messages database is protected, so even "
+                "copying it needs Full Disk Access for this app (grant it, then "
+                "try again). After one successful copy, future runs read the cache "
+                "without Full Disk Access.",
+            "Copy Messages data");
+        return;
+    }
+    for (const QString& suffix : {QStringLiteral("-wal"), QStringLiteral("-shm")}) {
+        QFile::remove(dest + suffix);
+        QFile::copy(src + suffix, dest + suffix);  // best-effort
+    }
+    const int fileIdx = source_->findData(SrcFile);
+    if (fileIdx >= 0) source_->setCurrentIndex(fileIdx);
+    dbPath_->setText(dest);
+    onSourceChanged();
+    status_->setText("Copied the Messages database to a local cache; now reading "
+                     "from it (no Full Disk Access needed next time).");
 }
 
 void MainWindow::importICloudContacts() {

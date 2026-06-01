@@ -63,6 +63,19 @@ std::string html_escape(const std::string& s) {
     return out;
 }
 
+// Escapes the characters most likely to break inline Markdown.
+std::string md_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\' || c == '`' || c == '*' || c == '_' || c == '[' || c == ']' ||
+            c == '<' || c == '>' || c == '|')
+            out += '\\';
+        out += c;
+    }
+    return out;
+}
+
 const char* kHtmlStyle =
     "body{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;"
     "background:#f0f0f3;margin:0;padding:2rem;color:#1d1d1f}"
@@ -90,6 +103,7 @@ bool parse_format(const std::string& name, Format& out) {
     if (name == "txt" || name == "text") { out = Format::Text; return true; }
     if (name == "json") { out = Format::Json; return true; }
     if (name == "html") { out = Format::Html; return true; }
+    if (name == "md" || name == "markdown") { out = Format::Markdown; return true; }
     return false;
 }
 
@@ -97,11 +111,12 @@ std::string extension_for(Format fmt) {
     switch (fmt) {
         case Format::Json: return "json";
         case Format::Html: return "html";
+        case Format::Markdown: return "md";
         case Format::Text: default: return "txt";
     }
 }
 
-std::string available_formats() { return "txt, json, html"; }
+std::string available_formats() { return "txt, md, json, html"; }
 
 std::string render_text(const Chat& chat) {
     std::ostringstream os;
@@ -123,6 +138,28 @@ std::string render_text(const Chat& chat) {
             wrote = true;
         }
         if (!wrote) os << "  (no content)\n";
+        os << "\n";
+    }
+    return os.str();
+}
+
+std::string render_markdown(const Chat& chat) {
+    std::ostringstream os;
+    os << "# " << md_escape(chat.title()) << "\n\n"
+       << "*" << md_escape(chat.service.empty() ? "unknown" : chat.service) << " · "
+       << md_escape(chat.participants.empty() ? "unknown" : join(chat.participants, ", "))
+       << " · " << chat.messages.size() << " messages*\n\n";
+    for (const Message& m : chat.messages) {
+        os << "**" << md_escape(m.sender) << "** — " << format_when(m) << "  \n";
+        if (m.has_text()) os << md_escape(m.text) << "\n";
+        for (const Attachment& a : m.attachments) {
+            os << "- \xF0\x9F\x93\x8E " << md_escape(a.display_name());
+            if (!a.data_uri.empty())
+                os << " (embedded)";
+            else if (!a.copied_path.empty())
+                os << " (`" << a.copied_path << "`)";
+            os << "\n";
+        }
         os << "\n";
     }
     return os.str();
@@ -392,6 +429,7 @@ std::string render(const Chat& chat, Format fmt) {
     switch (fmt) {
         case Format::Json: return render_json(chat);
         case Format::Html: return render_html(chat);
+        case Format::Markdown: return render_markdown(chat);
         case Format::Text: default: return render_text(chat);
     }
 }
@@ -411,6 +449,8 @@ std::string combined_item(const Chat& chat, Format fmt, std::size_t index) {
             return (index ? ",\n" : "\n") + render_json(chat);
         case Format::Html:
             return html_conversation(chat);
+        case Format::Markdown:
+            return (index ? std::string("\n---\n\n") : "") + render_markdown(chat);
         case Format::Text:
         default:
             // Each render_text already ends in a blank line; separate chats with

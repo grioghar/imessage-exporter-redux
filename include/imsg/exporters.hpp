@@ -8,7 +8,7 @@
 
 namespace imsg {
 
-enum class Format { Text, Json, Html };
+enum class Format { Text, Json, Html, Markdown };
 
 // Parses a format name ("txt"/"json"/"html"); returns false if unknown.
 bool parse_format(const std::string& name, Format& out);
@@ -22,6 +22,7 @@ std::string available_formats();
 std::string render_text(const Chat& chat);
 std::string render_json(const Chat& chat);
 std::string render_html(const Chat& chat);
+std::string render_markdown(const Chat& chat);
 
 // HTML-escapes `text` and turns http(s) URLs into links that open in a new
 // window/tab (target="_blank" rel="noopener noreferrer").
