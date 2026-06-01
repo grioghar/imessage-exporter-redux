@@ -68,7 +68,21 @@ void MessagesDatabase::open() {
     if (rc != SQLITE_OK) {
         std::string msg = db ? sqlite3_errmsg(db) : "out of memory";
         sqlite3_close(db);
-        throw DatabaseError("cannot open " + db_path_ + ": " + msg);
+        std::string hint;
+#if defined(__APPLE__)
+        // On macOS a TCC denial on ~/Library/Messages surfaces as SQLITE_AUTH
+        // ("authorization denied") or a can't-open/permission error. The fix is
+        // Full Disk Access, which the raw SQLite text doesn't explain.
+        if (rc == SQLITE_AUTH || rc == SQLITE_PERM || rc == SQLITE_CANTOPEN) {
+            hint =
+                "\nmacOS is blocking access to the Messages database. Grant "
+                "Full Disk Access (System Settings > Privacy & Security > Full "
+                "Disk Access) to this app (or your terminal), then quit and "
+                "reopen it and try again. Or copy chat.db somewhere readable and "
+                "pass it with --db.";
+        }
+#endif
+        throw DatabaseError("cannot open " + db_path_ + ": " + msg + hint);
     }
     db_ = db;
     log_info("opened database (read-only): " + db_path_);

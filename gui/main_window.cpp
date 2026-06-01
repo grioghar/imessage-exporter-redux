@@ -452,7 +452,20 @@ void MainWindow::exportFinished() {
     setBusy(false);
     if (!s.ok) {
         status_->setText("Failed.");
-        QMessageBox::critical(this, "Export failed", QString::fromStdString(s.error));
+        const QString err = QString::fromStdString(s.error);
+        if (err.contains("Full Disk Access")) {
+            QMessageBox box(QMessageBox::Critical, "Export failed", err,
+                            QMessageBox::Close, this);
+            QPushButton* settings =
+                box.addButton("Open Settings", QMessageBox::ActionRole);
+            box.exec();
+            if (box.clickedButton() == settings)
+                QDesktopServices::openUrl(QUrl(
+                    "x-apple.systempreferences:com.apple.preference.security?"
+                    "Privacy_AllFiles"));
+        } else {
+            QMessageBox::critical(this, "Export failed", err);
+        }
         return;
     }
     if (s.conversations == 0) {
