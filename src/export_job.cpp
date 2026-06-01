@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "imsg/contact_store.hpp"
 #include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
 #include "imsg/log.hpp"
@@ -200,6 +201,12 @@ ExportSummary export_database(const std::string& db_path,
             contacts = load_contacts(opts.contacts_path);
         else if (opts.use_contacts)
             contacts = load_contacts_default();
+        if (opts.use_contact_store) {
+            ContactStore store(opts.contact_store_path.empty()
+                                   ? default_contact_store_path()
+                                   : opts.contact_store_path);
+            if (store.open()) store.load_into(contacts);
+        }
         if (!contacts.empty())
             log_info("loaded " + std::to_string(contacts.size()) +
                      " contact handle(s) for name resolution");
