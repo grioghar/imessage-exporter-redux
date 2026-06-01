@@ -82,16 +82,18 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   displayed version now carries a build stamp `IMSG_VERSION-DDMMYYHHMM`
   (CMake `string(TIMESTAMP)` -> generated `imsg/build_stamp.hpp`, consumed only
   by the CLI/GUI; bridge/core keep bare IMSG_VERSION). Version base = 0.2.2.
-- **Slated for 0.2.3 (decisions made):**
-  - Google Contacts connect/download — **build it configurable**: implement the
-    OAuth 2.0 (PKCE, loopback redirect) + People API flow with the client ID read
-    from config/env (blank by default), so it ships but only works once a client
-    ID is supplied. Parse contacts into a ContactBook (reuse the vCard-ish path).
-  - Persistent store — **OS keychain for tokens only**: store OAuth tokens in the
-    OS secret store (macOS Keychain / Windows Credential Manager / libsecret);
-    keep the contacts cache as a plain SQLite DB (contacts are lower-risk, so the
-    cache file itself is NOT encrypted — this relaxes the earlier "encrypt the
-    DB" ask per the user's choice). DB persists across version updates.
+- **0.2.3 IN PROGRESS:**
+  - DONE: persistent contacts store `ContactStore` (`src/contact_store.cpp`,
+    imsg_db) — plain SQLite at `default_contact_store_path()` (per-user data
+    dir), persists across updates. Wired as a contacts source: CLI
+    `--contact-store`, GUI "Saved contacts database" option, and
+    `ExportOptions.use_contact_store` (merged into the resolution ContactBook).
+  - NEXT: Google Contacts connect/download — OAuth 2.0 (PKCE, loopback redirect)
+    + People API, **client ID from config/env (blank default)** so it ships and
+    works once supplied; downloaded contacts saved into the ContactStore.
+  - NEXT: OAuth tokens in the **OS keychain** (macOS `security` CLI / Windows
+    DPAPI / Linux file-fallback 0600). The contacts cache stays plain SQLite
+    (user chose keychain-for-tokens-only, not full DB encryption).
 - Previously released: **v0.2.1** — six installers (macOS `.dmg`, Windows
   `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
   Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),

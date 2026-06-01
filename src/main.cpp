@@ -40,6 +40,7 @@ void print_usage(std::ostream& os) {
        << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
        << "  --contacts       Resolve names via the default macOS Contacts DB\n"
        << "  --contacts-db P  Resolve names via a specific .abcddb / .vcf file or dir\n"
+       << "  --contact-store  Also resolve names from the saved contacts database\n"
        << "  --backup SPEC    Source from an iTunes/Finder backup: a path, a device\n"
        << "                   UDID, or 'latest' (unencrypted backups only)\n"
        << "  --list-backups   List available device backups and exit\n"
@@ -194,6 +195,8 @@ int main(int argc, char** argv) {
             opts.embed_attachments = true;
         } else if (arg == "--contacts") {
             opts.use_contacts = true;
+        } else if (arg == "--contact-store") {
+            opts.use_contact_store = true;
         } else if (arg == "--db") {
             if (!take_value(argc, argv, i, "--db", db_path)) return 2;
         } else if (arg == "--format") {

@@ -46,7 +46,7 @@
 namespace {
 // Index conventions for the source / contacts combo boxes.
 enum Source { SrcAuto = 0, SrcFile = 1, SrcBackup = 2 };
-enum Contacts { CtNone = 0, CtThisMac = 1, CtFile = 2, CtBackup = 3 };
+enum Contacts { CtNone = 0, CtThisMac = 1, CtFile = 2, CtBackup = 3, CtStore = 4 };
 
 // Modal dialog showing rich text with clickable (externally-opened) links.
 void richTextDialog(QWidget* parent, const QString& title, const QString& html) {
@@ -158,6 +158,7 @@ MainWindow::MainWindow()
     contacts_->addItem("This Mac's Contacts");
     contacts_->addItem("Contacts file (.abcddb / .vcf)…");
     contacts_->addItem("From the selected backup");
+    contacts_->addItem("Saved contacts database (Google / imported)");
     form->addRow("Names:", contacts_);
 
     auto* ctRow = new QHBoxLayout;
@@ -407,6 +408,9 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
                 opts.contacts_path = ab;
             break;
         }
+        case CtStore:
+            opts.use_contact_store = true;
+            break;
         default:
             break;
     }

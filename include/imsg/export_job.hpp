@@ -37,6 +37,11 @@ struct ExportOptions {
     // set, the default macOS AddressBook location is loaded.
     bool use_contacts = false;
     std::string contacts_path;
+
+    // Also merge names from the persistent contacts store (e.g. downloaded Google
+    // Contacts). Empty store_path means the default per-user location.
+    bool use_contact_store = false;
+    std::string contact_store_path;
 };
 
 struct ExportSummary {
