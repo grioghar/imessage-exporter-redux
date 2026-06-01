@@ -76,55 +76,42 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Released **v0.2.4** (latest; brew/choco at v0.2.4): Markdown export (`md`, engine); **PDF** export (GUI-only,
-  HTML→PDF via QTextDocument+QPdfWriter); macOS DMG now ad-hoc codesigned (stable
-  TCC identity) with two install targets (drag-to-/Applications + an "Install for
-  current user.command" → ~/Applications); GUI "Copy Messages data to a local
-  cache" button; people-picker errors use the rich Open-Settings dialog. Note:
-  CLI has md but NOT pdf (engine has no PDF lib). TCC can't be granted purely via
-  CLI (`tccutil` only resets); ad-hoc signing is the durable fix.
-- Released: **v0.2.3** (latest; six installers; brew/choco checksums refreshed)
-  — HTML URL links open in a new window; YouTube/Spotify/
-  Vimeo embeds; `--embed-attachments` inlines media as base64 data URIs; the
-  displayed version now carries a build stamp `IMSG_VERSION-DDMMYYHHMM`
-  (CMake `string(TIMESTAMP)` -> generated `imsg/build_stamp.hpp`, consumed only
-  by the CLI/GUI; bridge/core keep bare IMSG_VERSION). Version base = 0.2.2.
-- **0.2.3 IN PROGRESS:**
-  - DONE: persistent contacts store `ContactStore` (`src/contact_store.cpp`,
-    imsg_db) — plain SQLite at `default_contact_store_path()` (per-user data
-    dir), persists across updates. Wired as a contacts source: CLI
-    `--contact-store`, GUI "Saved contacts database" option, and
-    `ExportOptions.use_contact_store` (merged into the resolution ContactBook).
-  - DONE: Google Contacts connect/download (`gui/google_contacts.cpp`) — OAuth
-    2.0 PKCE + loopback redirect (QTcpServer) + People API; client ID/secret from
-    env `IMSG_GOOGLE_CLIENT_ID`/`IMSG_GOOGLE_CLIENT_SECRET` (blank default, so it
-    ships and works once supplied). Downloaded handles saved into the
-    ContactStore; GUI "Connect Google Contacts…" button.
-  - DONE: OAuth refresh token in the **OS keychain** (`gui/secret_store.cpp`) —
-    macOS `security` CLI, Windows Credential Manager (CredW*, links advapi32),
-    Linux 0600 file fallback (libsecret could replace it later). Contacts cache
-    stays plain SQLite (keychain-for-tokens-only, per the user's choice).
-  - ALSO in 0.2.3 (this batch): GUI settings persist across versions (QSettings
-    `ui/*`); "From" date with no "To" exports through now (no upper bound);
-    live per-attachment copy/embed logging in the export pane; job tracking with
-    close-confirmation + resume of an interrupted job and recovery after an
-    unclean shutdown (QSettings `job/*` + `skip_existing` + `on_progress`); and a
-    "Select people…" picker that limits export to chosen participants
-    (`only_participants`). Version bumped to 0.2.3 (0.2.3 was never tagged, so
-    this single release bundles the store + Google + this batch).
-  - REMAINING: tag v0.2.3, refresh brew/choco. Live OAuth/keychain + the GUI
-    job/resume flow are compile-validated only (no creds/desktop in CI).
-- Previously released: **v0.2.1** — six installers (macOS `.dmg`, Windows
-  `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
-  Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),
-  macOS Full Disk Access guidance on DB-open denial, and a GUI error dialog with
-  Copy error / Open log file / Open Settings. v0.2.0 and v0.1.0 also exist.
-  IMSG_VERSION = 0.2.1; Homebrew/Choco checksums refreshed for v0.2.1.
-- `main`: everything merged — features, backup, logging, Docker (+Hub publish),
-  Qt GUI with Help menu / iCloud CardDAV import / app icon / **auto-update** /
-  hidden Windows console, all six installer pipelines, Homebrew + Chocolatey
-  defs, this file. Version centralized in `include/imsg/version.hpp` = 0.2.0.
-- **Open PRs:** the brew/choco-0.2.1 checksum-refresh PR (this) only.
+- **v0.2.8 IN PROGRESS** (branch `feat/0.2.8-og-previews`): **true Open Graph
+  rich link previews**. Design: the core renderer stays network-free; it exposes
+  an optional resolver hook `imsg::set_link_preview_resolver(LinkPreviewFn)`
+  (exporters.hpp) that `media_embeds_html` calls for each non-embeddable URL — a
+  non-empty return is used verbatim, empty/none falls back to the offline
+  favicon `link_card`. The GUI supplies the fetcher in `gui/link_preview.cpp`
+  (`linkpreview::fetch_og_card`): a **synchronous** Qt-Network GET (own
+  QEventLoop, 6 s timeout, size caps) that parses `og:`/`twitter:` meta (+`<title>`
+  fallback), fetches the hero image and embeds it as a base64 data URI (so the
+  export stays self-contained offline), and returns an `.ogcard` HTML block
+  (CSS added to `kHtmlStyle`). Runs on the export worker thread; results cached
+  (QHash+QMutex, negatives too). Opt-in GUI checkbox "Rich link previews
+  (online)" (member `richPreviews_`, persisted `ui/richPreviews`); set in
+  `startExportResuming`, cleared in `exportFinished`. CLI doesn't set a resolver
+  → still gets favicon cards. Core test `test_link_preview_resolver` covers the
+  hook (no network). Only HTML/PDF use it. Version bumped to 0.2.8
+  (version.hpp/CMake/installer.iss/man/snapcraft); brew/choco refreshed
+  post-release as usual.
+- Released **v0.2.7** (brew/choco at v0.2.7; six installers): Select-People
+  picker maps contacts↔numbers ("Name — +1…"), substring-both-ways participant
+  match; **From/To fix** (changing a date now ticks its filter; From-only =
+  through today); per-conversation attachment **folder** `Name/` alongside
+  `Name.<ext>` with a "Hidden attachments folder" option
+  (`opts.hidden_attachment_dir`, leading-dot); **favicon link cards** for
+  non-embeddable URLs (`link_card`/`host_of` in exporters; `.linkcard` CSS) —
+  now superseded by the opt-in OG cards above.
+- Earlier: **v0.2.4** Markdown (engine) + PDF (GUI, QTextDocument→QPdfWriter);
+  ad-hoc-codesigned DMG w/ two install targets; "Copy Messages data" button.
+  **v0.2.3** persistent `ContactStore` (SQLite), Google Contacts OAuth-PKCE +
+  People API, OAuth token in OS keychain (`secret_store`), GUI settings persist,
+  job resume/recovery, people picker. **v0.2.1** Unicode filenames, FDA
+  guidance, rich error dialog. v0.2.0/v0.1.0 base.
+- `main` (@ bc37a6e before this branch): everything merged — engine + backup +
+  logging + Docker, Qt GUI (Help menu, iCloud CardDAV, Google Contacts,
+  auto-update), all six installer pipelines, Homebrew + Chocolatey at v0.2.7.
+- **Open PRs:** the `feat/0.2.8-og-previews` PR (this work).
 
 ## In flight / next
 - Publish to the actual registries (one-time, needs accounts): create

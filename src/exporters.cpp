@@ -3,10 +3,19 @@
 #include <cctype>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "imsg/time_util.hpp"
 
 namespace imsg {
+
+// Optional front-end-supplied rich-link-preview fetcher (see exporters.hpp).
+// Null by default so the engine stays network-free; media_embeds_html falls
+// back to the offline favicon card.
+static LinkPreviewFn g_link_preview;
+
+void set_link_preview_resolver(LinkPreviewFn fn) { g_link_preview = std::move(fn); }
+
 namespace {
 
 std::string format_when(const Message& m) {
@@ -103,7 +112,22 @@ const char* kHtmlStyle =
     ".linkcard-body{display:flex;flex-direction:column;min-width:0}"
     ".linkcard-host{font-weight:600;font-size:.9rem}"
     ".linkcard-url{color:#6e6e73;font-size:.75rem;overflow:hidden;"
-    "text-overflow:ellipsis;white-space:nowrap}";
+    "text-overflow:ellipsis;white-space:nowrap}"
+    // Open Graph rich card (hero image + title + description), used when a link
+    // preview resolver supplies fetched metadata. Falls back to .linkcard above.
+    ".ogcard{display:block;max-width:560px;margin-top:.4rem;border:1px solid "
+    "rgba(0,0,0,.12);border-radius:.6rem;overflow:hidden;background:#fff;"
+    "text-decoration:none!important;color:#1d1d1f}"
+    ".ogcard-img{display:block;width:100%;max-height:300px;object-fit:cover}"
+    ".ogcard-body{padding:.55rem .75rem}"
+    ".ogcard-title{font-weight:600;font-size:.95rem;line-height:1.25;"
+    "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"
+    "overflow:hidden}"
+    ".ogcard-desc{color:#3a3a3c;font-size:.8rem;margin-top:.2rem;"
+    "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"
+    "overflow:hidden}"
+    ".ogcard-host{color:#6e6e73;font-size:.72rem;margin-top:.3rem;"
+    "text-transform:uppercase;letter-spacing:.02em}";
 
 }  // namespace
 
@@ -450,8 +474,13 @@ std::string media_embeds_html(const std::string& text) {
             out += iframe("https://open.spotify.com/embed/" + id);
         else if (!(id = vimeo_id(url)).empty())
             out += iframe("https://player.vimeo.com/video/" + id);
-        else
-            out += link_card(url);  // Facebook, news, etc.: a favicon+host card
+        else {
+            // Facebook, news, etc.: a rich Open Graph card when a resolver is
+            // installed (GUI, opt-in) and the fetch succeeds, else the offline
+            // favicon+host card.
+            std::string card = g_link_preview ? g_link_preview(url) : std::string();
+            out += card.empty() ? link_card(url) : card;
+        }
     }
     return out;
 }

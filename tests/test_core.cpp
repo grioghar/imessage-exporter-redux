@@ -308,6 +308,42 @@ void test_linkify_and_embeds() {
     check_eq(imsg::media_embeds_html("no links here"), "", "embed: none without URLs");
 }
 
+void test_link_preview_resolver() {
+    // A non-embeddable host normally renders the offline favicon card.
+    check(contains(imsg::media_embeds_html("https://www.facebook.com/x"),
+                   "class=\"linkcard\""),
+          "preview: favicon card without a resolver");
+
+    // With a resolver installed, its non-empty HTML is used verbatim instead.
+    int calls = 0;
+    imsg::set_link_preview_resolver([&calls](const std::string& url) {
+        ++calls;
+        return "<a class=\"ogcard\">card for " + url + "</a>";
+    });
+    std::string fb = imsg::media_embeds_html("https://www.facebook.com/x");
+    check(contains(fb, "class=\"ogcard\"") && contains(fb, "facebook.com/x"),
+          "preview: resolver output used for non-embeddable host");
+    check(!contains(fb, "class=\"linkcard\""), "preview: favicon card replaced");
+
+    // Embeddable hosts (YouTube) keep their iframe and never hit the resolver.
+    int before = calls;
+    check(contains(imsg::media_embeds_html("https://youtu.be/dQw4w9WgXcQ"),
+                   "youtube.com/embed/"),
+          "preview: youtube still embeds with a resolver set");
+    check(calls == before, "preview: resolver not called for embeddable hosts");
+
+    // An empty return falls back to the favicon card.
+    imsg::set_link_preview_resolver([](const std::string&) { return std::string(); });
+    check(contains(imsg::media_embeds_html("https://www.facebook.com/x"),
+                   "class=\"linkcard\""),
+          "preview: empty resolver result falls back to favicon card");
+
+    imsg::set_link_preview_resolver(nullptr);  // restore for later tests
+    check(contains(imsg::media_embeds_html("https://www.facebook.com/x"),
+                   "class=\"linkcard\""),
+          "preview: cleared resolver restores favicon card");
+}
+
 void test_attachment_embed_html() {
     imsg::Chat c = make_chat();
     c.messages[2].attachments[0].data_uri = "data:image/jpeg;base64,QUJD";
@@ -358,6 +394,7 @@ int main() {
     test_combined_export();
     test_attachment_copied_path();
     test_linkify_and_embeds();
+    test_link_preview_resolver();
     test_attachment_embed_html();
     test_markdown_export();
     test_chat_title();
