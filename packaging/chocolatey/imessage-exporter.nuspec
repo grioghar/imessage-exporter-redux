@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>imessage-exporter</id>
+    <version>0.2.0</version>
+    <title>iMessage Exporter</title>
+    <authors>imessage-exporter maintainers</authors>
+    <owners>grioghar</owners>
+    <projectUrl>https://github.com/grioghar/imessage-exporter-redux</projectUrl>
+    <projectSourceUrl>https://github.com/grioghar/imessage-exporter-redux</projectSourceUrl>
+    <packageSourceUrl>https://github.com/grioghar/imessage-exporter-redux/tree/main/packaging/chocolatey</packageSourceUrl>
+    <licenseUrl>https://github.com/grioghar/imessage-exporter-redux/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <iconUrl>https://raw.githubusercontent.com/grioghar/imessage-exporter-redux/main/assets/icon.svg</iconUrl>
+    <tags>imessage sms export macos chat backup cli gui foss</tags>
+    <summary>Export macOS iMessage/SMS history to TXT, JSON, or HTML.</summary>
+    <description>
+A small, fast C++ tool with a Qt desktop UI to export a macOS Messages database
+(chat.db) — copied from a Mac or extracted from an unencrypted iTunes/Finder
+device backup — to TXT, JSON, or HTML. Resolves contact names, copies
+attachments, filters by date, and can produce a single combined file.
+
+This package installs the desktop GUI (and bundled CLI) from the project's
+signed-by-Inno-Setup installer.
+    </description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
