@@ -286,6 +286,32 @@ void test_attachment_copied_path() {
           "attach: json includes copied path");
 }
 
+void test_linkify_and_embeds() {
+    std::string a = imsg::linkify_html("see https://example.com/x now");
+    check(contains(a, "<a href=\"https://example.com/x\" target=\"_blank\""),
+          "linkify: anchor opens new window");
+    check(contains(a, "rel=\"noopener noreferrer\""), "linkify: rel noopener");
+    check_eq(imsg::linkify_html("a < b & c"), "a &lt; b &amp; c",
+             "linkify: escapes non-URL text");
+
+    check(contains(imsg::media_embeds_html("x https://youtu.be/dQw4w9WgXcQ y"),
+                   "youtube.com/embed/dQw4w9WgXcQ"),
+          "embed: youtube");
+    check(contains(imsg::media_embeds_html("https://open.spotify.com/track/abc123"),
+                   "open.spotify.com/embed/track/abc123"),
+          "embed: spotify");
+    check_eq(imsg::media_embeds_html("https://example.com/page"), "",
+             "embed: none for unknown host");
+}
+
+void test_attachment_embed_html() {
+    imsg::Chat c = make_chat();
+    c.messages[2].attachments[0].data_uri = "data:image/jpeg;base64,QUJD";
+    std::string html = imsg::render_html(c);
+    check(contains(html, "src=\"data:image/jpeg;base64,QUJD\""),
+          "embed: inline image data URI in HTML");
+}
+
 void test_chat_title() {
     imsg::Chat c;
     c.rowid = 7;
@@ -315,6 +341,8 @@ int main() {
     test_vcard();
     test_combined_export();
     test_attachment_copied_path();
+    test_linkify_and_embeds();
+    test_attachment_embed_html();
     test_chat_title();
 
     if (g_failures == 0) {

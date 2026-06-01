@@ -33,7 +33,10 @@ dependencies.
   metadata.
 - **Date-range filtering** with `--since` / `--until`.
 - **Copies attachment files** into the export and links them (HTML embeds images)
-  with `--copy-attachments`; otherwise only metadata is exported.
+  with `--copy-attachments`; or **inlines** pictures/videos/files as base64 with
+  `--embed-attachments` so each HTML/JSON file is self-contained.
+- **Rich HTML** — URLs become links that open in a new window, and YouTube /
+  Spotify / Vimeo links render as inline embeds (other hosts get a link).
 - **Contact-name resolution** so senders show names instead of phone numbers /
   emails — from the macOS Contacts (AddressBook) database (`--contacts`) or from
   a vCard `.vcf` file exported from iCloud.com (`--contacts-db contacts.vcf`).

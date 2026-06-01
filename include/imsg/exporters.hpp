@@ -23,6 +23,15 @@ std::string render_text(const Chat& chat);
 std::string render_json(const Chat& chat);
 std::string render_html(const Chat& chat);
 
+// HTML-escapes `text` and turns http(s) URLs into links that open in a new
+// window/tab (target="_blank" rel="noopener noreferrer").
+std::string linkify_html(const std::string& text);
+
+// Embed HTML (YouTube / Spotify / Vimeo iframes) for recognized URLs in `text`,
+// or "" when none are present. Unknown hosts (incl. Facebook, which needs its JS
+// SDK) get no iframe — just the clickable link from linkify_html.
+std::string media_embeds_html(const std::string& text);
+
 // Dispatches to the renderer for `fmt`.
 std::string render(const Chat& chat, Format fmt);
 

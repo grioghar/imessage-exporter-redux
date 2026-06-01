@@ -1,5 +1,6 @@
 #include "imsg/exporters.hpp"
 
+#include <cctype>
 #include <sstream>
 #include <string>
 
@@ -77,8 +78,11 @@ const char* kHtmlStyle =
     ".msg.me .bubble{background:#0b84ff;color:#fff;border-bottom-right-radius:.25rem}"
     ".msg .info{font-size:.7rem;color:#8e8e93;margin:0 .5rem .1rem}"
     ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}"
-    "img.attachment{max-width:100%;border-radius:.5rem;display:block;font-style:normal}"
-    "a.attachment{color:inherit}";
+    "img.attachment,video.attachment{max-width:100%;border-radius:.5rem;"
+    "display:block;font-style:normal}"
+    "a.attachment{color:inherit}.bubble a{color:inherit;text-decoration:underline}"
+    ".embed{width:100%;max-width:560px;height:315px;border:0;border-radius:.6rem;"
+    "margin-top:.4rem;display:block}";
 
 }  // namespace
 
@@ -169,6 +173,8 @@ std::string render_json(const Chat& chat) {
             os << "\"copied_path\": "
                << (a.copied_path.empty() ? "null"
                                          : "\"" + json_escape(a.copied_path) + "\"");
+            if (!a.data_uri.empty())
+                os << ", \"data_uri\": \"" << json_escape(a.data_uri) << "\"";
             os << "}";
         }
         os << "]\n";
@@ -183,6 +189,91 @@ namespace {
 
 bool is_image_mime(const std::string& mime) {
     return mime.compare(0, 6, "image/") == 0;
+}
+bool is_video_mime(const std::string& mime) {
+    return mime.compare(0, 6, "video/") == 0;
+}
+bool is_audio_mime(const std::string& mime) {
+    return mime.compare(0, 6, "audio/") == 0;
+}
+
+// --- URL detection / linkifying / provider embeds --------------------------
+
+bool url_starts(const std::string& s, std::size_t i) {
+    return s.compare(i, 7, "http://") == 0 || s.compare(i, 8, "https://") == 0;
+}
+
+// End of the URL token starting at i, trimming trailing sentence punctuation.
+std::size_t url_end(const std::string& s, std::size_t i) {
+    std::size_t j = i;
+    while (j < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[j]);
+        if (c <= ' ' || c == '<' || c == '>' || c == '"' || c == '\'') break;
+        ++j;
+    }
+    while (j > i) {
+        char c = s[j - 1];
+        if (c == '.' || c == ',' || c == ')' || c == '!' || c == '?' || c == ';' ||
+            c == ':')
+            --j;
+        else
+            break;
+    }
+    return j;
+}
+
+// Token of id chars (alnum, '_', '-') at position p.
+std::string take_id(const std::string& s, std::size_t p) {
+    std::string id;
+    while (p < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[p]);
+        if (std::isalnum(c) || c == '_' || c == '-')
+            id += static_cast<char>(c);
+        else
+            break;
+        ++p;
+    }
+    return id;
+}
+
+std::string youtube_id(const std::string& url) {
+    std::size_t p = url.find("youtu.be/");
+    if (p != std::string::npos) return take_id(url, p + 9);
+    if (url.find("youtube.com") != std::string::npos) {
+        p = url.find("v=");
+        if (p != std::string::npos) return take_id(url, p + 2);
+    }
+    return "";
+}
+
+// "type/id" for an open.spotify.com link, or "".
+std::string spotify_path(const std::string& url) {
+    std::size_t p = url.find("open.spotify.com/");
+    if (p == std::string::npos) return "";
+    p += 17;
+    std::size_t slash = url.find('/', p);
+    if (slash == std::string::npos) return "";
+    std::string type = url.substr(p, slash - p);
+    if (type != "track" && type != "album" && type != "playlist" &&
+        type != "episode" && type != "show")
+        return "";
+    std::string id = take_id(url, slash + 1);
+    return id.empty() ? "" : (type + "/" + id);
+}
+
+std::string vimeo_id(const std::string& url) {
+    std::size_t p = url.find("vimeo.com/");
+    if (p == std::string::npos) return "";
+    p += 10;
+    std::string id;
+    while (p < url.size() && std::isdigit(static_cast<unsigned char>(url[p])))
+        id += url[p++];
+    return id;
+}
+
+std::string iframe(const std::string& src) {
+    return "<iframe class=\"embed\" src=\"" + src +
+           "\" loading=\"lazy\" allowfullscreen></iframe>";
 }
 
 // One conversation as a self-contained <div class="conversation"> block, shared
@@ -204,24 +295,32 @@ std::string html_conversation(const Chat& chat) {
            << html_escape(format_when(m)) << "</div>"
            << "<div class=\"bubble\">";
         bool wrote = false;
-        if (m.has_text()) { os << html_escape(m.text); wrote = true; }
+        if (m.has_text()) { os << linkify_html(m.text); wrote = true; }
         for (const Attachment& a : m.attachments) {
             if (wrote) os << "<br>";
             const std::string name = html_escape(a.display_name());
-            if (!a.copied_path.empty()) {
-                const std::string href = html_escape(a.copied_path);
-                if (is_image_mime(a.mime_type))
-                    os << "<a href=\"" << href << "\"><img class=\"attachment\" src=\""
-                       << href << "\" alt=\"" << name << "\"></a>";
-                else
-                    os << "<a class=\"attachment\" href=\"" << href
-                       << "\">\xF0\x9F\x93\x8E " << name << "</a>";
-            } else {
+            // Prefer an inlined data URI (--embed-attachments); else a copied
+            // file link; else just the name.
+            const std::string src =
+                !a.data_uri.empty() ? a.data_uri : html_escape(a.copied_path);
+            if (src.empty()) {
                 os << "<span class=\"attachment\">\xF0\x9F\x93\x8E " << name << "</span>";
+            } else if (is_image_mime(a.mime_type)) {
+                os << "<a href=\"" << src << "\"><img class=\"attachment\" src=\""
+                   << src << "\" alt=\"" << name << "\"></a>";
+            } else if (is_video_mime(a.mime_type)) {
+                os << "<video class=\"attachment\" controls src=\"" << src << "\"></video>";
+            } else if (is_audio_mime(a.mime_type)) {
+                os << "<audio controls src=\"" << src << "\"></audio>";
+            } else {
+                os << "<a class=\"attachment\" href=\"" << src << "\" download=\"" << name
+                   << "\">\xF0\x9F\x93\x8E " << name << "</a>";
             }
             wrote = true;
         }
         if (!wrote) os << "<span class=\"empty\">(no content)</span>";
+        // Rich provider embeds (YouTube/Spotify/Vimeo) for any URLs in the text.
+        if (m.has_text()) os << media_embeds_html(m.text);
         os << "</div></div>\n";
     }
     os << "</div>\n";
@@ -242,6 +341,48 @@ std::string html_head(const std::string& title) {
 const char* kHtmlTail = "</body>\n</html>\n";
 
 }  // namespace
+
+std::string linkify_html(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size();) {
+        if (url_starts(text, i)) {
+            std::size_t e = url_end(text, i);
+            const std::string esc = html_escape(text.substr(i, e - i));
+            out += "<a href=\"" + esc +
+                   "\" target=\"_blank\" rel=\"noopener noreferrer\">" + esc + "</a>";
+            i = e;
+        } else {
+            switch (text[i]) {
+                case '&': out += "&amp;"; break;
+                case '<': out += "&lt;"; break;
+                case '>': out += "&gt;"; break;
+                case '"': out += "&quot;"; break;
+                case '\'': out += "&#39;"; break;
+                default: out += text[i];
+            }
+            ++i;
+        }
+    }
+    return out;
+}
+
+std::string media_embeds_html(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size();) {
+        if (!url_starts(text, i)) { ++i; continue; }
+        std::size_t e = url_end(text, i);
+        const std::string url = text.substr(i, e - i);
+        i = e;
+        std::string id;
+        if (!(id = youtube_id(url)).empty())
+            out += iframe("https://www.youtube.com/embed/" + id);
+        else if (!(id = spotify_path(url)).empty())
+            out += iframe("https://open.spotify.com/embed/" + id);
+        else if (!(id = vimeo_id(url)).empty())
+            out += iframe("https://player.vimeo.com/video/" + id);
+    }
+    return out;
+}
 
 std::string render_html(const Chat& chat) {
     return html_head(chat.title()) + html_conversation(chat) + kHtmlTail;

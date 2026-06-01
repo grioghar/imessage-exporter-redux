@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(imessage_exporter LANGUAGES CXX VERSION 0.2.1)
+project(imessage_exporter LANGUAGES CXX VERSION 0.2.2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # So the static core/db libraries link cleanly into the (PIE) Qt GUI executable.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Build timestamp (DDMMYYHHMM, 24h) appended to the displayed version. Generated
+# into the build tree; only the CLI/GUI consume it (the core/bridge use the bare
+# IMSG_VERSION so the SwiftPM/iOS build needs no generated header).
+string(TIMESTAMP IMSG_BUILD_STAMP "%d%m%y%H%M")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.hpp.in
+               ${CMAKE_BINARY_DIR}/generated/imsg/build_stamp.hpp @ONLY)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -48,6 +55,7 @@ if(SQLite3_FOUND)
   # CLI binary.
   add_executable(imessage-exporter src/main.cpp)
   target_link_libraries(imessage-exporter PRIVATE imsg_db)
+  target_include_directories(imessage-exporter PRIVATE ${CMAKE_BINARY_DIR}/generated)
   install(TARGETS imessage-exporter RUNTIME DESTINATION bin)
   install(FILES man/imessage-exporter.1 DESTINATION share/man/man1)
 
@@ -66,6 +74,8 @@ if(SQLite3_FOUND)
     add_executable(imessage-exporter-gui ${GUI_SOURCES})
     target_link_libraries(imessage-exporter-gui
       PRIVATE imsg_db Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg)
+    target_include_directories(imessage-exporter-gui
+      PRIVATE ${CMAKE_BINARY_DIR}/generated)
     if(APPLE)
       # Produces "iMessage Exporter.app" for double-click launch.
       set_target_properties(imessage-exporter-gui PROPERTIES

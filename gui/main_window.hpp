@@ -74,6 +74,7 @@ class MainWindow : public QWidget {
     QDateEdit* until_ = nullptr;
     QCheckBox* combined_ = nullptr;
     QCheckBox* copyAttachments_ = nullptr;
+    QCheckBox* embedAttachments_ = nullptr;
     QComboBox* contacts_ = nullptr;     // none / this Mac / file / from backup
     QLineEdit* contactsPath_ = nullptr;
     QPushButton* contactsBrowse_ = nullptr;
