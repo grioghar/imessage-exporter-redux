@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QWidget>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -27,6 +28,8 @@ class QPushButton;
 class QPlainTextEdit;
 class QLabel;
 class QWidget;
+class QDialog;
+class QTabWidget;
 
 class MainWindow : public QWidget {
     Q_OBJECT
@@ -55,6 +58,9 @@ class MainWindow : public QWidget {
     void connectDrive();     // authorize Google Drive (persisted) for uploads
     void driveUploadFinished();
     void showFullDiskAccessHelp();  // macOS: grant FDA / fix quarantine
+    void showPreferences();         // open the Preferences pane (⌘,)
+    void pauseExport();             // toggle pause/resume of a running export
+    void stopExport();              // cancel a running export (keep finished files)
 
    private:
     // Prompt for the Google OAuth client (ID/secret, or imported JSON) and
@@ -119,9 +125,18 @@ class MainWindow : public QWidget {
     QComboBox* logLevel_ = nullptr;
 
     QPushButton* exportBtn_ = nullptr;
+    QPushButton* pauseBtn_ = nullptr;
+    QPushButton* stopBtn_ = nullptr;
     QPushButton* openBtn_ = nullptr;
     QLabel* status_ = nullptr;
     QPlainTextEdit* logView_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    QDialog* prefsDialog_ = nullptr;   // holds the persistent configuration
+    int runTabIndex_ = -1;             // so Export can jump to the Run tab
+
+    // Cooperative export control, read on the worker thread between conversations.
+    std::atomic<bool> stopRequested_{false};
+    std::atomic<bool> paused_{false};
 
     QFutureWatcher<imsg::ExportSummary> watcher_;
     QFutureWatcher<icloud::Result> icloudWatcher_;
