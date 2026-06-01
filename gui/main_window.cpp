@@ -562,9 +562,9 @@ void MainWindow::writeLogFile(const QStringList& lines) {
     out << "\n";
 }
 
-void MainWindow::showExportError(const QString& error) {
+void MainWindow::showExportError(const QString& error, const QString& title) {
     QDialog dlg(this);
-    dlg.setWindowTitle("Export failed");
+    dlg.setWindowTitle(title);
     auto* layout = new QVBoxLayout(&dlg);
     layout->addWidget(new QLabel("The export could not be completed:", &dlg));
 
@@ -771,7 +771,7 @@ void MainWindow::pickPeople() {
             }
         }
     } catch (const imsg::DatabaseError& e) {
-        QMessageBox::warning(this, "Select people", e.what());
+        showExportError(QString::fromUtf8(e.what()), "Cannot read messages");
         return;
     }
     people.sort(Qt::CaseInsensitive);
