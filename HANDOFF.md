@@ -88,12 +88,17 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
     dir), persists across updates. Wired as a contacts source: CLI
     `--contact-store`, GUI "Saved contacts database" option, and
     `ExportOptions.use_contact_store` (merged into the resolution ContactBook).
-  - NEXT: Google Contacts connect/download — OAuth 2.0 (PKCE, loopback redirect)
-    + People API, **client ID from config/env (blank default)** so it ships and
-    works once supplied; downloaded contacts saved into the ContactStore.
-  - NEXT: OAuth tokens in the **OS keychain** (macOS `security` CLI / Windows
-    DPAPI / Linux file-fallback 0600). The contacts cache stays plain SQLite
-    (user chose keychain-for-tokens-only, not full DB encryption).
+  - DONE: Google Contacts connect/download (`gui/google_contacts.cpp`) — OAuth
+    2.0 PKCE + loopback redirect (QTcpServer) + People API; client ID/secret from
+    env `IMSG_GOOGLE_CLIENT_ID`/`IMSG_GOOGLE_CLIENT_SECRET` (blank default, so it
+    ships and works once supplied). Downloaded handles saved into the
+    ContactStore; GUI "Connect Google Contacts…" button.
+  - DONE: OAuth refresh token in the **OS keychain** (`gui/secret_store.cpp`) —
+    macOS `security` CLI, Windows Credential Manager (CredW*, links advapi32),
+    Linux 0600 file fallback (libsecret could replace it later). Contacts cache
+    stays plain SQLite (keychain-for-tokens-only, per the user's choice).
+  - REMAINING for the 0.2.3 release: bump version to 0.2.3, tag, refresh
+    brew/choco. Live OAuth/keychain are compile-validated only (no creds in CI).
 - Previously released: **v0.2.1** — six installers (macOS `.dmg`, Windows
   `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
   Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),

@@ -13,6 +13,7 @@
 #include <mutex>
 #include <vector>
 
+#include "google_contacts.hpp"
 #include "icloud_contacts.hpp"
 #include "imsg/export_job.hpp"
 #include "updater.hpp"
@@ -79,6 +80,8 @@ class MainWindow : public QWidget {
     QLineEdit* contactsPath_ = nullptr;
     QPushButton* contactsBrowse_ = nullptr;
     QPushButton* icloudBtn_ = nullptr;
+    QPushButton* googleBtn_ = nullptr;
+    GoogleContacts* google_ = nullptr;
     QComboBox* logLevel_ = nullptr;
 
     QPushButton* exportBtn_ = nullptr;

@@ -38,8 +38,10 @@ dependencies.
 - **Rich HTML** — URLs become links that open in a new window, and YouTube /
   Spotify / Vimeo links render as inline embeds (other hosts get a link).
 - **Contact-name resolution** so senders show names instead of phone numbers /
-  emails — from the macOS Contacts (AddressBook) database (`--contacts`) or from
-  a vCard `.vcf` file exported from iCloud.com (`--contacts-db contacts.vcf`).
+  emails — from the macOS Contacts (AddressBook) database (`--contacts`), a vCard
+  `.vcf` exported from iCloud.com (`--contacts-db contacts.vcf`), iCloud CardDAV
+  or **Google Contacts** (desktop app), or a **persistent saved database**
+  (`--contact-store`) that remembers downloaded contacts across updates.
 - **Reads from a device backup** — point `--backup` at an unencrypted
   iTunes/Finder backup and it extracts the messages (and contacts) to export,
   no live database needed. `--list-backups` discovers them.

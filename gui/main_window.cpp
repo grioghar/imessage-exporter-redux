@@ -174,6 +174,11 @@ MainWindow::MainWindow()
                            "app-specific password.");
     form->addRow("", icloudBtn_);
 
+    googleBtn_ = new QPushButton("Connect Google Contacts…");
+    googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
+                           "saved contacts database (needs IMSG_GOOGLE_CLIENT_ID).");
+    form->addRow("", googleBtn_);
+
     logLevel_ = new QComboBox;
     logLevel_->addItems({"error", "warn", "info", "debug"});
     logLevel_->setCurrentText("info");
@@ -278,6 +283,39 @@ MainWindow::MainWindow()
     });
     if (QSettings().value("updates/autoCheck", true).toBool())
         QTimer::singleShot(1500, this, [this] { runUpdateCheck(false); });
+
+    // --- Google Contacts -----------------------------------------------------
+    google_ = new GoogleContacts(this);
+    connect(google_, &GoogleContacts::status, this,
+            [this](const QString& m) { status_->setText(m); });
+    connect(google_, &GoogleContacts::finished, this, [this](int n) {
+        contacts_->setCurrentIndex(CtStore);
+        onContactsChanged();
+        status_->setText(QString("Imported %1 Google contact entr%2 into the saved "
+                                 "database.")
+                             .arg(n)
+                             .arg(n == 1 ? "y" : "ies"));
+        QMessageBox::information(
+            this, "Google Contacts",
+            QString("Downloaded %1 entries. They are saved and will be used for "
+                    "name resolution (\"Saved contacts database\").")
+                .arg(n));
+    });
+    connect(google_, &GoogleContacts::failed, this, [this](const QString& e) {
+        status_->setText("Google import failed.");
+        QMessageBox::warning(this, "Google Contacts", e);
+    });
+    connect(googleBtn_, &QPushButton::clicked, this, [this] {
+        if (!GoogleContacts::configured()) {
+            QMessageBox::information(
+                this, "Google Contacts",
+                "To enable this, create a Google Cloud OAuth \"Desktop app\" client "
+                "for the People API and set IMSG_GOOGLE_CLIENT_ID (and "
+                "IMSG_GOOGLE_CLIENT_SECRET) in your environment, then restart.");
+            return;
+        }
+        google_->connectAndDownload();
+    });
 
     onSourceChanged();
     onContactsChanged();
