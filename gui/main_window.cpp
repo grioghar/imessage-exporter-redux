@@ -3,9 +3,11 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDate>
 #include <QDateEdit>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -24,6 +26,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTextStream>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -67,6 +70,11 @@ MainWindow::MainWindow()
     : logMutex_(std::make_shared<std::mutex>()),
       logBuffer_(std::make_shared<std::vector<std::string>>()) {
     setWindowTitle("iMessage Exporter");
+
+    const QString dataDir =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dataDir);
+    logFilePath_ = QDir(dataDir).filePath("imessage-exporter.log");
 
     auto* form = new QFormLayout;
 
@@ -439,33 +447,69 @@ void MainWindow::startExport() {
     }));
 }
 
+void MainWindow::writeLogFile(const QStringList& lines) {
+    if (logFilePath_.isEmpty()) return;
+    QFile f(logFilePath_);
+    if (!f.open(QIODevice::Append | QIODevice::Text)) return;
+    QTextStream out(&f);
+    out << "=== " << QDateTime::currentDateTime().toString(Qt::ISODate) << " ===\n";
+    for (const QString& line : lines) out << line << "\n";
+    out << "\n";
+}
+
+void MainWindow::showExportError(const QString& error) {
+    QDialog dlg(this);
+    dlg.setWindowTitle("Export failed");
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel("The export could not be completed:", &dlg));
+
+    auto* text = new QPlainTextEdit(error, &dlg);
+    text->setReadOnly(true);
+    text->setMinimumSize(460, 130);
+    layout->addWidget(text);
+
+    auto* buttons = new QDialogButtonBox(&dlg);
+    QPushButton* copyBtn = buttons->addButton("Copy error", QDialogButtonBox::ActionRole);
+    QPushButton* logBtn = buttons->addButton("Open log file", QDialogButtonBox::ActionRole);
+    QPushButton* settingsBtn = error.contains("Full Disk Access")
+        ? buttons->addButton("Open Settings", QDialogButtonBox::ActionRole)
+        : nullptr;
+    buttons->addButton(QDialogButtonBox::Close);
+    layout->addWidget(buttons);
+
+    connect(copyBtn, &QPushButton::clicked, this,
+            [error] { QApplication::clipboard()->setText(error); });
+    connect(logBtn, &QPushButton::clicked, this,
+            [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(logFilePath_)); });
+    if (settingsBtn)
+        connect(settingsBtn, &QPushButton::clicked, this, [] {
+            QDesktopServices::openUrl(QUrl(
+                "x-apple.systempreferences:com.apple.preference.security?"
+                "Privacy_AllFiles"));
+        });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    dlg.exec();
+}
+
 void MainWindow::exportFinished() {
     imsg::set_log_sink(nullptr);
+    QStringList lines;
     {
         std::lock_guard<std::mutex> lk(*logMutex_);
         for (const std::string& line : *logBuffer_)
-            logView_->appendPlainText(QString::fromStdString(line));
+            lines << QString::fromStdString(line);
         logBuffer_->clear();
     }
+    for (const QString& line : lines) logView_->appendPlainText(line);
 
     const imsg::ExportSummary s = watcher_.result();
+    if (!s.ok) lines << ("ERROR: " + QString::fromStdString(s.error));
+    writeLogFile(lines);
+
     setBusy(false);
     if (!s.ok) {
         status_->setText("Failed.");
-        const QString err = QString::fromStdString(s.error);
-        if (err.contains("Full Disk Access")) {
-            QMessageBox box(QMessageBox::Critical, "Export failed", err,
-                            QMessageBox::Close, this);
-            QPushButton* settings =
-                box.addButton("Open Settings", QMessageBox::ActionRole);
-            box.exec();
-            if (box.clickedButton() == settings)
-                QDesktopServices::openUrl(QUrl(
-                    "x-apple.systempreferences:com.apple.preference.security?"
-                    "Privacy_AllFiles"));
-        } else {
-            QMessageBox::critical(this, "Export failed", err);
-        }
+        showExportError(QString::fromStdString(s.error));
         return;
     }
     if (s.conversations == 0) {
