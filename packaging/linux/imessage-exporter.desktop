@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=iMessage Exporter
+Comment=Export macOS iMessage/SMS history to TXT, JSON, or HTML
+Exec=imessage-exporter-gui
+Icon=imessage-exporter
+Categories=Utility;
+Terminal=false

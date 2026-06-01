@@ -57,7 +57,7 @@ if(SQLite3_FOUND)
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTORCC ON)
     set(GUI_SOURCES gui/main.cpp gui/main_window.cpp gui/icloud_contacts.cpp
-        gui/resources.qrc)
+        gui/updater.cpp gui/resources.qrc)
     # Embed the app icon in the Windows .exe when the .ico has been generated
     # (the package workflow renders assets/icon.ico from the SVG before building).
     if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.ico")
@@ -72,8 +72,20 @@ if(SQLite3_FOUND)
         MACOSX_BUNDLE TRUE
         OUTPUT_NAME "iMessage Exporter")
     endif()
+    if(WIN32)
+      # Windowed subsystem: no console window pops up behind the GUI.
+      set_target_properties(imessage-exporter-gui PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
     install(TARGETS imessage-exporter-gui
       RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+    if(UNIX AND NOT APPLE)
+      # Desktop-environment integration for .deb / .rpm / Snap / AppImage.
+      install(FILES packaging/linux/imessage-exporter.desktop
+        DESTINATION share/applications)
+      install(FILES assets/icon.svg
+        DESTINATION share/icons/hicolor/scalable/apps
+        RENAME imessage-exporter.svg)
+    endif()
   else()
     message(STATUS
       "Qt6 not found: skipping the desktop GUI. Install Qt 6 (e.g. "
@@ -93,3 +105,23 @@ else()
     "Install libsqlite3-dev (Linux) to build the 'imessage-exporter' binary. "
     "On macOS SQLite3 ships with the system and is found automatically.")
 endif()
+
+# --- CPack: Linux distro packages (.deb / .rpm) ------------------------------
+# Built in CI against the distro's own Qt so dependencies resolve via the system
+# package manager. Run from the build dir: `cpack -G DEB` or `cpack -G RPM`.
+set(CPACK_PACKAGE_NAME "imessage-exporter")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_CONTACT "imessage-exporter maintainers")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+  "Export macOS iMessage/SMS history to TXT, JSON, or HTML")
+set(CPACK_PACKAGE_HOMEPAGE_URL
+  "https://github.com/grioghar/imessage-exporter-redux")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+# DEB: let dpkg-shlibdeps derive the Qt/SQLite runtime dependencies.
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+# RPM: dependency discovery is automatic.
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Applications/Productivity")
+set(CPACK_RPM_PACKAGE_AUTOREQ "yes")
+include(CPack)

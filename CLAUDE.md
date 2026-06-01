@@ -232,6 +232,16 @@ Planned front-ends, all calling the same `export_database()` / bridge:
   package workflow (Linux PNG via rsvg, macOS `.icns` via iconutil, Windows
   `.ico` via ImageMagick embedded through `assets/app_icon.rc`). A
   `docker-publish` workflow pushes the CLI image to GHCR on a `v*` tag.
+  Auto-update: `gui/updater.cpp` checks the GitHub Releases API, downloads the
+  platform installer, and installs+restarts (Windows Inno `/VERYSILENT`; AppImage
+  self-replace+re-exec; macOS/deb/rpm/snap → open/defer). Help menu has the
+  toggle (QSettings `updates/autoCheck`, default on) + "Check now". Windows GUI
+  is `WIN32_EXECUTABLE` (no console window). Version is centralized in
+  `include/imsg/version.hpp` (`IMSG_VERSION`) — keep in sync with CMake
+  `project(VERSION)`, installer.iss, man page, snapcraft.yaml. Linux distro
+  packages: CPack `.deb`/`.rpm` (built against distro Qt in CI) + a Snap
+  (`snap/snapcraft.yaml`, kde-neon-6 extension); a `.desktop` + SVG icon are
+  installed for desktop integration.
   macOS builds it as a `MACOSX_BUNDLE`
   named "iMessage Exporter.app". Gated on `find_package(Qt6)`; CI builds it on
   Linux (`qt6-base-dev`). CI now compiles the GUI on macOS/Windows/Linux

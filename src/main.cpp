@@ -13,12 +13,13 @@
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
 #include "imsg/time_util.hpp"
+#include "imsg/version.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kVersion = "0.1.0";
+constexpr const char* kVersion = IMSG_VERSION;
 
 void print_usage(std::ostream& os) {
     os << "Usage: imessage-exporter [options]\n\n"
