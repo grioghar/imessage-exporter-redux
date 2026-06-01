@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -115,6 +116,77 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
     return copied;
 }
 
+std::string base64_encode(const std::string& in) {
+    static const char* T =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((in.size() + 2) / 3 * 4);
+    std::size_t i = 0;
+    for (; i + 3 <= in.size(); i += 3) {
+        unsigned n = static_cast<unsigned char>(in[i]) << 16 |
+                     static_cast<unsigned char>(in[i + 1]) << 8 |
+                     static_cast<unsigned char>(in[i + 2]);
+        out += T[(n >> 18) & 63];
+        out += T[(n >> 12) & 63];
+        out += T[(n >> 6) & 63];
+        out += T[n & 63];
+    }
+    if (i < in.size()) {
+        unsigned n = static_cast<unsigned char>(in[i]) << 16;
+        const bool two = (i + 1 < in.size());
+        if (two) n |= static_cast<unsigned char>(in[i + 1]) << 8;
+        out += T[(n >> 18) & 63];
+        out += T[(n >> 12) & 63];
+        out += two ? T[(n >> 6) & 63] : '=';
+        out += '=';
+    }
+    return out;
+}
+
+// MIME from the DB, or a guess from the extension, or octet-stream.
+std::string guess_mime(const std::string& filename, const std::string& known) {
+    if (!known.empty()) return known;
+    std::string ext = fs::path(filename).extension().string();
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".gif") return "image/gif";
+    if (ext == ".heic") return "image/heic";
+    if (ext == ".webp") return "image/webp";
+    if (ext == ".mp4" || ext == ".m4v") return "video/mp4";
+    if (ext == ".mov") return "video/quicktime";
+    if (ext == ".m4a") return "audio/mp4";
+    if (ext == ".pdf") return "application/pdf";
+    return "application/octet-stream";
+}
+
+// Inlines each attachment's bytes as a base64 data URI (--embed-attachments).
+// Caches by source path so a file shared across messages is read once.
+void embed_chat_attachments(Chat& chat,
+                            std::unordered_map<std::string, std::string>& cache) {
+    for (Message& m : chat.messages) {
+        for (Attachment& a : m.attachments) {
+            if (a.filename.empty()) continue;
+            std::string src = expand_user_path(a.filename);
+            auto it = cache.find(src);
+            if (it != cache.end()) {
+                a.data_uri = it->second;
+                continue;
+            }
+            std::error_code ec;
+            if (!fs::exists(src, ec) || ec) continue;
+            std::ifstream f(fs::u8path(src), std::ios::binary);
+            if (!f) continue;
+            std::string bytes((std::istreambuf_iterator<char>(f)),
+                              std::istreambuf_iterator<char>());
+            std::string uri = "data:" + guess_mime(a.filename, a.mime_type) +
+                              ";base64," + base64_encode(bytes);
+            cache.emplace(src, uri);
+            a.data_uri = uri;
+        }
+    }
+}
+
 }  // namespace
 
 ExportSummary export_database(const std::string& db_path,
@@ -150,6 +222,7 @@ ExportSummary export_database(const std::string& db_path,
         std::unordered_set<std::string> used_names;          // output file names
         std::unordered_set<std::string> used_attach;         // attachment rel paths
         std::unordered_map<std::string, std::string> seen_src;  // src -> rel path
+        std::unordered_map<std::string, std::string> embed_cache;  // src -> data URI
         int written = 0;
 
         // For combined export, one file streams every conversation in turn.
@@ -177,6 +250,7 @@ ExportSummary export_database(const std::string& db_path,
             if (opts.copy_attachments)
                 summary.attachments_copied +=
                     copy_chat_attachments(chat, out_dir, slug, seen_src, used_attach);
+            if (opts.embed_attachments) embed_chat_attachments(chat, embed_cache);
 
             if (opts.combined) {
                 combined << combined_item(chat, fmt, static_cast<std::size_t>(written));

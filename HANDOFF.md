@@ -76,7 +76,16 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Released: **v0.2.1** (latest) — six installers (macOS `.dmg`, Windows
+- Releasing: **v0.2.2** — HTML URL links open in a new window; YouTube/Spotify/
+  Vimeo embeds; `--embed-attachments` inlines media as base64 data URIs; the
+  displayed version now carries a build stamp `IMSG_VERSION-DDMMYYHHMM`
+  (CMake `string(TIMESTAMP)` -> generated `imsg/build_stamp.hpp`, consumed only
+  by the CLI/GUI; bridge/core keep bare IMSG_VERSION). Version base = 0.2.2.
+- **Requested but NOT yet built (need decisions):** Google Contacts OAuth
+  connect/download (needs a Google OAuth client ID) and an encrypted persistent
+  SQLite DB for contacts + auth tokens (needs SQLCipher vs app-master-password
+  decision). These are slated for 0.2.3.
+- Previously released: **v0.2.1** — six installers (macOS `.dmg`, Windows
   `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
   Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),
   macOS Full Disk Access guidance on DB-open denial, and a GUI error dialog with

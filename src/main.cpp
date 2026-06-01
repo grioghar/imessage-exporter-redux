@@ -11,6 +11,7 @@
 #include "imsg/database.hpp"
 #include "imsg/export_job.hpp"
 #include "imsg/exporters.hpp"
+#include "imsg/build_stamp.hpp"
 #include "imsg/log.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
@@ -19,7 +20,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kVersion = IMSG_VERSION;
+// Displayed version includes the build timestamp, e.g. 0.2.2-0106261004.
+constexpr const char* kVersion = IMSG_VERSION "-" IMSG_BUILD_STAMP;
 
 void print_usage(std::ostream& os) {
     os << "Usage: imessage-exporter [options]\n\n"
@@ -35,6 +37,7 @@ void print_usage(std::ostream& os) {
        << "  --until DATE     Only messages on/before DATE (date-only = end of day)\n"
        << "  --combined       Write one combined file instead of one per chat\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
+       << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
        << "  --contacts       Resolve names via the default macOS Contacts DB\n"
        << "  --contacts-db P  Resolve names via a specific .abcddb / .vcf file or dir\n"
        << "  --backup SPEC    Source from an iTunes/Finder backup: a path, a device\n"
@@ -187,6 +190,8 @@ int main(int argc, char** argv) {
             opts.combined = true;
         } else if (arg == "--copy-attachments") {
             opts.copy_attachments = true;
+        } else if (arg == "--embed-attachments") {
+            opts.embed_attachments = true;
         } else if (arg == "--contacts") {
             opts.use_contacts = true;
         } else if (arg == "--db") {

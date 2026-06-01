@@ -18,6 +18,10 @@ struct Attachment {
     // exported. Always uses '/' separators so it works as an HTML/href path.
     std::string copied_path;
 
+    // A "data:<mime>;base64,..." URI of the file's bytes, set by the export job
+    // when --embed-attachments is used so HTML/JSON output is self-contained.
+    std::string data_uri;
+
     // Human-friendly name, preferring the transfer name the sender saw.
     std::string display_name() const;
 };

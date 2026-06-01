@@ -39,6 +39,7 @@
 #include "imsg/database.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
+#include "imsg/build_stamp.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
 
@@ -142,9 +143,13 @@ MainWindow::MainWindow()
 
     combined_ = new QCheckBox("Single combined file");
     copyAttachments_ = new QCheckBox("Copy attachment files");
+    embedAttachments_ = new QCheckBox("Embed attachments (larger files)");
+    embedAttachments_->setToolTip("Inline pictures, movies and files as base64 so "
+                                  "each HTML/JSON file is self-contained.");
     auto* flags = new QHBoxLayout;
     flags->addWidget(combined_);
     flags->addWidget(copyAttachments_);
+    flags->addWidget(embedAttachments_);
     flags->addStretch();
     form->addRow("", flags);
 
@@ -327,6 +332,7 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.me_label = meLabel_->text().isEmpty() ? "Me" : meLabel_->text().toStdString();
     opts.combined = combined_->isChecked();
     opts.copy_attachments = copyAttachments_->isChecked();
+    opts.embed_attachments = embedAttachments_->isChecked();
 
     if (sinceOn_->isChecked() &&
         imsg::parse_date(since_->date().toString("yyyy-MM-dd").toStdString(), opts.since))
@@ -649,7 +655,7 @@ void MainWindow::runUpdateCheck(bool manual) {
 void MainWindow::showAbout() {
     richTextDialog(
         this, "About iMessage Exporter",
-        "<h3>iMessage Exporter " IMSG_VERSION "</h3>"
+        "<h3>iMessage Exporter " IMSG_VERSION "-" IMSG_BUILD_STAMP "</h3>"
         "<p>Export macOS iMessage / SMS history to TXT, JSON, or HTML.</p>"
         "<p>A small, fast C++ tool with a Qt desktop front-end, sharing one "
         "export engine across the CLI, desktop, and iOS.</p>"
