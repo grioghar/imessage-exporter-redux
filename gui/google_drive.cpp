@@ -169,11 +169,35 @@ void GoogleDrive::exchangeCode(const QString& code) {
 namespace drive {
 namespace {
 
-// Exchange the stored refresh token for a fresh access token. "" on failure.
-QString refreshAccessToken(QNetworkAccessManager& nam) {
+// Turn a Drive/token API error response into an actionable message.
+QString driveError(const QJsonObject& obj, int code, const QString& what) {
+    QString msg = obj.value("error").toObject().value("message").toString();
+    if (msg.isEmpty()) msg = obj.value("error_description").toString();
+    if (msg.isEmpty()) msg = obj.value("error").toString();
+    if (msg.isEmpty()) msg = code ? QString("HTTP %1").arg(code) : "no response";
+    QString out = "Google Drive could not " + what + ": " + msg + ".";
+    if (code == 401 || code == 403 || msg.contains("scope", Qt::CaseInsensitive) ||
+        msg.contains("insufficient", Qt::CaseInsensitive) ||
+        msg.contains("permission", Qt::CaseInsensitive))
+        out += "\n\nFix: in Google Cloud Console → Data access, add the scope "
+               "https://www.googleapis.com/auth/drive.file, then click "
+               "\"Reconnect Google Drive…\" so the new permission is granted.";
+    return out;
+}
+
+// Exchange the stored refresh token for a fresh access token. "" + `error` on
+// failure.
+QString refreshAccessToken(QNetworkAccessManager& nam, QString& error) {
     const QString refresh = secret::retrieve(kRefreshKey);
+    if (refresh.isEmpty()) {
+        error = "Google Drive isn't connected. Click \"Connect Google Drive…\" first.";
+        return QString();
+    }
     const QString id = googleauth::clientId();
-    if (refresh.isEmpty() || id.isEmpty()) return QString();
+    if (id.isEmpty()) {
+        error = "No Google OAuth client is configured (enter or import one first).";
+        return QString();
+    }
 
     QUrlQuery form;
     form.addQueryItem("client_id", id);
@@ -187,14 +211,19 @@ QString refreshAccessToken(QNetworkAccessManager& nam) {
     int code = 0;
     const QByteArray body = sendBlocking(
         nam.post(req, form.toString(QUrl::FullyEncoded).toUtf8()), 30000, &code);
-    return QJsonDocument::fromJson(body).object().value("access_token").toString();
+    const QJsonObject obj = QJsonDocument::fromJson(body).object();
+    const QString tok = obj.value("access_token").toString();
+    if (tok.isEmpty()) error = driveError(obj, code, "refresh the saved sign-in");
+    return tok;
 }
 
 QString driveQueryEscape(QString s) { return s.replace('\\', "\\\\").replace('\'', "\\'"); }
 
-// Find a folder named `name` under `parentId`, or create it. "" on failure.
+// Find a folder named `name` under `parentId`, or create it. "" + `error` on
+// failure. A parentId of "root" means the user's My Drive root.
 QString findOrCreateFolder(QNetworkAccessManager& nam, const QString& token,
-                           const QString& name, const QString& parentId) {
+                           const QString& name, const QString& parentId,
+                           QString& error) {
     QUrl url("https://www.googleapis.com/drive/v3/files");
     QUrlQuery qy;
     qy.addQueryItem("q", QString("name = '%1' and mimeType = '%2' and trashed = false "
@@ -207,14 +236,19 @@ QString findOrCreateFolder(QNetworkAccessManager& nam, const QString& token,
     greq.setRawHeader("Authorization", ("Bearer " + token).toUtf8());
     int code = 0;
     const QByteArray body = sendBlocking(nam.get(greq), 30000, &code);
-    const QJsonArray files = QJsonDocument::fromJson(body).object().value("files").toArray();
-    if (!files.isEmpty()) return files.first().toObject().value("id").toString();
+    if (code >= 200 && code < 300) {  // only trust a successful listing
+        const QJsonArray files =
+            QJsonDocument::fromJson(body).object().value("files").toArray();
+        if (!files.isEmpty()) return files.first().toObject().value("id").toString();
+    }
 
-    // Not found: create it.
+    // Not found (or listing not permitted under drive.file): create it. Omit
+    // `parents` for a root-level folder so we don't depend on the "root" alias.
     QJsonObject meta;
     meta["name"] = name;
     meta["mimeType"] = QString(kFolderMime);
-    meta["parents"] = QJsonArray{parentId};
+    if (!parentId.isEmpty() && parentId != "root")
+        meta["parents"] = QJsonArray{parentId};
     QNetworkRequest creq((QUrl("https://www.googleapis.com/drive/v3/files")));
     creq.setRawHeader("Authorization", ("Bearer " + token).toUtf8());
     creq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -222,7 +256,10 @@ QString findOrCreateFolder(QNetworkAccessManager& nam, const QString& token,
     const QByteArray cbody =
         sendBlocking(nam.post(creq, QJsonDocument(meta).toJson(QJsonDocument::Compact)),
                      30000, &code);
-    return QJsonDocument::fromJson(cbody).object().value("id").toString();
+    const QJsonObject obj = QJsonDocument::fromJson(cbody).object();
+    const QString id = obj.value("id").toString();
+    if (id.isEmpty()) error = driveError(obj, code, "create the folder \"" + name + "\"");
+    return id;
 }
 
 // Multipart upload of one file into `parentId`. Returns true on 2xx.
@@ -265,9 +302,10 @@ bool uploadTree(QNetworkAccessManager& nam, const QString& token,
     for (const QFileInfo& fi : entries) {
         if (fi.isDir()) {
             const QString childId =
-                findOrCreateFolder(nam, token, fi.fileName(), parentId);
+                findOrCreateFolder(nam, token, fi.fileName(), parentId, error);
             if (childId.isEmpty()) {
-                error = "Could not create the Drive folder \"" + fi.fileName() + "\".";
+                if (error.isEmpty())
+                    error = "Could not create the Drive subfolder \"" + fi.fileName() + "\".";
                 return false;
             }
             if (!uploadTree(nam, token, fi.absoluteFilePath(), childId, count, error))
@@ -285,18 +323,18 @@ bool uploadTree(QNetworkAccessManager& nam, const QString& token,
 UploadResult uploadDirectory(const QString& localDir, const QString& folderName) {
     UploadResult r;
     QNetworkAccessManager nam;
-    const QString token = refreshAccessToken(nam);
+    const QString token = refreshAccessToken(nam, r.error);
     if (token.isEmpty()) {
-        r.error =
-            "Could not get a Google Drive access token. Reconnect Google Drive "
-            "(the saved authorization may have expired or been revoked).";
+        if (r.error.isEmpty())
+            r.error = "Could not get a Google Drive access token. Reconnect Google Drive.";
         return r;
     }
     const QString folder = folderName.trimmed().isEmpty() ? "iMessage Export"
                                                           : folderName.trimmed();
-    const QString folderId = findOrCreateFolder(nam, token, folder, "root");
+    const QString folderId = findOrCreateFolder(nam, token, folder, "root", r.error);
     if (folderId.isEmpty()) {
-        r.error = "Could not create the Drive folder \"" + folder + "\".";
+        if (r.error.isEmpty())
+            r.error = "Could not create the Drive folder \"" + folder + "\".";
         return r;
     }
     if (!uploadTree(nam, token, localDir, folderId, r.files, r.error)) return r;
