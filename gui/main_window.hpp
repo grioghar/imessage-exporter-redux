@@ -66,7 +66,8 @@ class MainWindow : public QWidget {
     // Appends a session's log lines to the on-disk log file (logFilePath_).
     void writeLogFile(const QStringList& lines);
     // Error dialog with Copy / Open log file / (Open Settings) / Close.
-    void showExportError(const QString& error);
+    void showExportError(const QString& error,
+                         const QString& title = QStringLiteral("Export failed"));
 
     // Source selection.
     QComboBox* source_ = nullptr;       // auto / file / backup
