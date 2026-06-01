@@ -5,6 +5,7 @@
 
 #include <QFutureWatcher>
 #include <QString>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QWidget>
 
@@ -52,6 +53,10 @@ class MainWindow : public QWidget {
     bool buildInputs(std::string& db_path, std::string& out_dir, imsg::Format& fmt,
                      imsg::ExportOptions& opts, QString& error);
     void setBusy(bool busy);
+    // Appends a session's log lines to the on-disk log file (logFilePath_).
+    void writeLogFile(const QStringList& lines);
+    // Error dialog with Copy / Open log file / (Open Settings) / Close.
+    void showExportError(const QString& error);
 
     // Source selection.
     QComboBox* source_ = nullptr;       // auto / file / backup
@@ -86,6 +91,7 @@ class MainWindow : public QWidget {
     std::shared_ptr<std::vector<std::string>> logBuffer_;
     QTemporaryDir tempDir_;  // holds files extracted from a backup
     QString lastOutputDir_;
+    QString logFilePath_;    // persistent log file (for the "Open log file" action)
 
     Updater* updater_ = nullptr;
     bool manualUpdateCheck_ = false;  // true when the user clicked "Check now"

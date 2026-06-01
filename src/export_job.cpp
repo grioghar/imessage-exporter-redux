@@ -18,24 +18,48 @@ namespace fs = std::filesystem;
 namespace imsg {
 namespace {
 
-// Reduces a conversation title to a safe, lowercase filename stem. Keeping only
-// alphanumerics and single dashes also prevents path traversal (e.g. "../").
+// Reduces a conversation title to a filesystem-safe stem, PRESERVING Unicode
+// letters: UTF-8 multibyte bytes (>= 0x80) are kept verbatim, so names like
+// "José" or non-Latin scripts survive. ASCII control chars and the characters
+// illegal in Windows/macOS filenames are dropped; runs of other punctuation and
+// whitespace collapse to a single '-'. The result is truncated on a UTF-8 code
+// point boundary so it stays valid UTF-8 (important for the Windows path
+// conversion). Keeping no raw '/'/'\\' also prevents path traversal.
 std::string slugify(const std::string& value) {
+    auto is_unsafe = [](unsigned char c) {
+        return c < 0x20 || c == '/' || c == '\\' || c == ':' || c == '*' ||
+               c == '?' || c == '"' || c == '<' || c == '>' || c == '|';
+    };
     std::string out;
     bool last_dash = false;
-    for (char ch : value) {
-        unsigned char c = static_cast<unsigned char>(ch);
-        if (std::isalnum(c)) {
+    for (unsigned char c : value) {
+        if (c >= 0x80) {  // part of a UTF-8 sequence: keep as-is
+            out += static_cast<char>(c);
+            last_dash = false;
+        } else if (std::isalnum(c)) {
             out += static_cast<char>(std::tolower(c));
             last_dash = false;
-        } else if (!last_dash && !out.empty()) {
+        } else if (is_unsafe(c)) {
+            // drop entirely
+        } else if (!last_dash && !out.empty()) {  // space/punct -> single dash
             out += '-';
             last_dash = true;
         }
-        if (out.size() >= 80) break;
+    }
+    if (out.size() > 80) {  // truncate without splitting a UTF-8 sequence
+        std::size_t cut = 80;
+        while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
+        out.resize(cut);
     }
     while (!out.empty() && out.back() == '-') out.pop_back();
     return out;
+}
+
+// Joins a UTF-8 output dir + UTF-8 relative path into a filesystem path encoded
+// correctly for the platform (on Windows, std::string is otherwise treated as
+// the ANSI codepage, mangling Unicode names).
+fs::path out_path(const std::string& out_dir, const std::string& rel_utf8) {
+    return fs::u8path(out_dir) / fs::u8path(rel_utf8);
 }
 
 // Expands a leading "~" to $HOME so attachment paths stored as "~/Library/..."
@@ -57,9 +81,6 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
                           std::unordered_map<std::string, std::string>& seen_src,
                           std::unordered_set<std::string>& used_rel) {
     int copied = 0;
-    const fs::path dest_dir = fs::path(out_dir) / "attachments" / slug;
-    bool dir_ready = false;
-
     for (Message& m : chat.messages) {
         for (Attachment& a : m.attachments) {
             if (a.filename.empty()) continue;
@@ -80,11 +101,8 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
             for (int n = 2; used_rel.count(rel); ++n)
                 rel = "attachments/" + slug + "/" + std::to_string(n) + "-" + base;
 
-            if (!dir_ready) {
-                fs::create_directories(dest_dir, ec);
-                dir_ready = true;
-            }
-            fs::path dest = fs::path(out_dir) / rel;
+            fs::path dest = out_path(out_dir, rel);
+            fs::create_directories(dest.parent_path(), ec);
             fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec);
             if (ec) continue;  // copy failed: leave as metadata-only
 
@@ -121,7 +139,7 @@ ExportSummary export_database(const std::string& db_path,
         std::vector<Chat> chats = db.load_chat_index();
 
         std::error_code ec;
-        fs::create_directories(out_dir, ec);
+        fs::create_directories(fs::u8path(out_dir), ec);
         if (ec) {
             summary.error =
                 "cannot create output directory '" + out_dir + "': " + ec.message();
@@ -138,7 +156,7 @@ ExportSummary export_database(const std::string& db_path,
         std::ofstream combined;
         if (opts.combined) {
             fs::path path =
-                fs::path(out_dir) / (std::string(combined_stem()) + "." + ext);
+                out_path(out_dir, std::string(combined_stem()) + "." + ext);
             combined.open(path, std::ios::binary);
             if (!combined) {
                 summary.error = "cannot write '" + path.string() + "'";
@@ -168,10 +186,10 @@ ExportSummary export_database(const std::string& db_path,
                     name = slug + "-" + std::to_string(n) + "." + ext;
                 used_names.insert(name);
 
-                fs::path path = fs::path(out_dir) / name;
+                fs::path path = out_path(out_dir, name);
                 std::ofstream out(path, std::ios::binary);
                 if (!out) {
-                    summary.error = "cannot write '" + path.string() + "'";
+                    summary.error = "cannot write '" + name + "' in " + out_dir;
                     return summary;
                 }
                 out << render(chat, fmt);
