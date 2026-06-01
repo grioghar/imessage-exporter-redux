@@ -51,6 +51,7 @@
 #include "imsg/build_stamp.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
+#include "link_preview.hpp"
 #include "secret_store.hpp"
 
 namespace {
@@ -166,11 +167,18 @@ MainWindow::MainWindow()
     hiddenAttachDir_ = new QCheckBox("Hidden attachments folder");
     hiddenAttachDir_->setToolTip("Name each conversation's attachments folder with "
                                  "a leading dot (hidden on macOS/Linux).");
+    richPreviews_ = new QCheckBox("Rich link previews (online)");
+    richPreviews_->setToolTip(
+        "For HTML/PDF exports, fetch each shared link's Open Graph preview "
+        "(hero image, title, description) over the network and embed it inline, "
+        "like Messages shows. Slower and requires internet; without it, links "
+        "still get a favicon + site card. YouTube/Spotify/Vimeo always embed.");
     auto* flags = new QHBoxLayout;
     flags->addWidget(combined_);
     flags->addWidget(copyAttachments_);
     flags->addWidget(embedAttachments_);
     flags->addWidget(hiddenAttachDir_);
+    flags->addWidget(richPreviews_);
     flags->addStretch();
     form->addRow("", flags);
 
@@ -570,6 +578,16 @@ void MainWindow::startExportResuming(bool resume) {
             Qt::QueuedConnection);
     };
 
+    // Rich link previews: install a fetcher the HTML renderer calls per link.
+    // It runs on the export worker thread (synchronous network), so set it
+    // before launching and clear it in exportFinished(). Only HTML/PDF render
+    // link cards; harmless otherwise.
+    if (richPreviews_->isChecked())
+        imsg::set_link_preview_resolver(
+            [](const std::string& url) { return linkpreview::fetch_og_card(url); });
+    else
+        imsg::set_link_preview_resolver(nullptr);
+
     setBusy(true);
     watcher_.setFuture(QtConcurrent::run([db_path, out_dir, fmt, opts]() {
         return imsg::export_database(db_path, out_dir, fmt, opts);
@@ -629,6 +647,7 @@ void MainWindow::showExportError(const QString& error, const QString& title) {
 
 void MainWindow::exportFinished() {
     imsg::set_log_sink(nullptr);
+    imsg::set_link_preview_resolver(nullptr);
     jobRunning_ = false;
     QSettings().setValue("job/state", "finished");
     QStringList lines;
@@ -709,6 +728,7 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
+    s.setValue("ui/richPreviews", richPreviews_->isChecked());
     s.setValue("ui/contacts", contacts_->currentIndex());
     s.setValue("ui/contactsPath", contactsPath_->text());
     s.setValue("ui/logLevel", logLevel_->currentText());
@@ -734,6 +754,7 @@ void MainWindow::loadSettings() {
     copyAttachments_->setChecked(s.value("ui/copy", false).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
+    richPreviews_->setChecked(s.value("ui/richPreviews", false).toBool());
     contacts_->setCurrentIndex(s.value("ui/contacts", 0).toInt());
     contactsPath_->setText(s.value("ui/contactsPath").toString());
     logLevel_->setCurrentText(s.value("ui/logLevel", "info").toString());

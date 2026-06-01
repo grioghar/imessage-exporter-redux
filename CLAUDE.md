@@ -206,6 +206,18 @@ The reader also adapts to schema differences across macOS versions via
 - **Docker** — multi-stage `Dockerfile` builds the Linux CLI (runs ctest during
   build); bind-mount or `docker cp` your data to `/data`. A `docker` CI job
   builds the image and smoke-tests the binary.
+- **Rich link previews** — `media_embeds_html` keeps embedding YouTube/Spotify/
+  Vimeo as iframes; for other URLs it renders an offline favicon+host card
+  (`link_card`) by default. The core also exposes an optional network resolver
+  hook, `set_link_preview_resolver(LinkPreviewFn)` (exporters.hpp): when one is
+  installed, each non-embeddable URL is passed to it and a non-empty return
+  (rich HTML) is used instead of the favicon card — keeping the engine itself
+  network-free. The Qt GUI supplies it (`gui/link_preview.cpp`): a synchronous
+  fetch (own QEventLoop on the export worker thread, timeout + size caps, result
+  cache) that parses Open Graph / Twitter-Card meta, embeds the hero image as a
+  base64 data URI, and emits an `.ogcard` block (CSS in `kHtmlStyle`). It is
+  opt-in via the GUI "Rich link previews (online)" checkbox; the CLI installs no
+  resolver, so it falls back to favicon cards.
 
 ## Product vision / roadmap (the bigger picture)
 

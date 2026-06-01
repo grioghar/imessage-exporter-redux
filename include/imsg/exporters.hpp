@@ -1,6 +1,7 @@
 // Renderers that turn a conversation into output text.
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,18 @@ std::string linkify_html(const std::string& text);
 // or "" when none are present. Unknown hosts (incl. Facebook, which needs its JS
 // SDK) get no iframe — just the clickable link from linkify_html.
 std::string media_embeds_html(const std::string& text);
+
+// Optional resolver that turns a non-embeddable URL into rich preview HTML
+// (e.g. an Open Graph card with the page's hero image/title). When one is
+// installed, media_embeds_html calls it for each such URL and uses a non-empty
+// return verbatim; an empty return (or no resolver) falls back to the offline
+// favicon+host link_card. The engine itself does no network I/O — a front-end
+// (the Qt GUI) supplies a fetcher. Returned HTML should use the og-card CSS
+// classes baked into the HTML document head. Install before export and clear
+// after; not safe to change while a render is in flight. Returning rich cards
+// can be slow (one network round-trip per URL), so it is opt-in.
+using LinkPreviewFn = std::function<std::string(const std::string& url)>;
+void set_link_preview_resolver(LinkPreviewFn fn);
 
 // Dispatches to the renderer for `fmt`.
 std::string render(const Chat& chat, Format fmt);

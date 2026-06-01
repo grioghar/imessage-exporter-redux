@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(imessage_exporter LANGUAGES CXX VERSION 0.2.7)
+project(imessage_exporter LANGUAGES CXX VERSION 0.2.8)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,7 +67,7 @@ if(SQLite3_FOUND)
     set(CMAKE_AUTORCC ON)
     set(GUI_SOURCES gui/main.cpp gui/main_window.cpp gui/icloud_contacts.cpp
         gui/updater.cpp gui/secret_store.cpp gui/google_contacts.cpp
-        gui/resources.qrc)
+        gui/link_preview.cpp gui/resources.qrc)
     # Embed the app icon in the Windows .exe when the .ico has been generated
     # (the package workflow renders assets/icon.ico from the SVG before building).
     if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.ico")

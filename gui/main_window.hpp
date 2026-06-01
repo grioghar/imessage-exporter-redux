@@ -91,6 +91,7 @@ class MainWindow : public QWidget {
     QCheckBox* copyAttachments_ = nullptr;
     QCheckBox* embedAttachments_ = nullptr;
     QCheckBox* hiddenAttachDir_ = nullptr;
+    QCheckBox* richPreviews_ = nullptr;  // fetch Open Graph link previews (HTML/PDF)
     QComboBox* contacts_ = nullptr;     // none / this Mac / file / from backup
     QLineEdit* contactsPath_ = nullptr;
     QPushButton* contactsBrowse_ = nullptr;
