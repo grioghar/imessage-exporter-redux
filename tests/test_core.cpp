@@ -352,6 +352,40 @@ void test_attachment_embed_html() {
           "embed: inline image data URI in HTML");
 }
 
+void test_inline_media_fallback() {
+    // The Messages DB often leaves attachment.mime_type empty; pictures/movies
+    // must still inline (guessed from the file name), not degrade to bare links.
+    imsg::Chat c;
+    c.chat_identifier = "+15550001111";
+    c.participants = {"+15550001111"};
+    imsg::Message m;
+    m.is_from_me = false;
+    m.sender = "+15550001111";
+    imsg::Attachment img;  // no mime_type, .png name, copied file
+    img.transfer_name = "pic.png";
+    img.copied_path = "Chat/pic.png";
+    m.attachments.push_back(img);
+    imsg::Attachment vid;  // no mime_type, .mov name
+    vid.filename = "/tmp/movie.mov";
+    vid.transfer_name = "movie.mov";
+    vid.copied_path = "Chat/movie.mov";
+    m.attachments.push_back(vid);
+    c.messages.push_back(m);
+
+    const std::string h = imsg::render_html(c);
+    check(contains(h, "<img class=\"attachment\" loading=\"lazy\"") &&
+              contains(h, "Chat/pic.png"),
+          "media: image inlines (lazy) without a DB mime type");
+    check(contains(h, "<video class=\"attachment\" controls preload=\"none\"") &&
+              contains(h, "Chat/movie.mov"),
+          "media: movie inlines as <video> without a DB mime type");
+
+    const std::string md = imsg::render_markdown(c);
+    check(contains(md, "![pic.png](Chat/pic.png)"), "media: markdown inline image");
+    check(contains(md, "[movie.mov](Chat/movie.mov)"),
+          "media: markdown links the movie to its copy");
+}
+
 void test_markdown_export() {
     imsg::Format f;
     check(imsg::parse_format("md", f) && f == imsg::Format::Markdown, "md: parse md");
@@ -396,6 +430,7 @@ int main() {
     test_linkify_and_embeds();
     test_link_preview_resolver();
     test_attachment_embed_html();
+    test_inline_media_fallback();
     test_markdown_export();
     test_chat_title();
 

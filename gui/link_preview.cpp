@@ -163,7 +163,8 @@ std::string buildCard(const QString& url, const QString& title, const QString& d
     QString card = "<a class=\"ogcard\" href=\"" + htmlEscape(url) +
                    "\" target=\"_blank\" rel=\"noopener noreferrer\">";
     if (!imgDataUri.isEmpty())
-        card += "<img class=\"ogcard-img\" alt=\"\" src=\"" + imgDataUri + "\">";
+        card += "<img class=\"ogcard-img\" loading=\"lazy\" alt=\"\" src=\"" + imgDataUri +
+                "\">";
     card += "<div class=\"ogcard-body\">";
     card += "<div class=\"ogcard-title\">" + htmlEscape(title) + "</div>";
     if (!desc.isEmpty())

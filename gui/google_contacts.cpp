@@ -16,6 +16,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "google_auth.hpp"
 #include "imsg/contact_store.hpp"
 #include "secret_store.hpp"
 
@@ -26,16 +27,6 @@ const char* kScope = "https://www.googleapis.com/auth/contacts.readonly";
 const char* kPeople =
     "https://people.googleapis.com/v1/people/me/connections";
 
-// Stored in-app (entered via the GUI dialog) takes priority over the env vars.
-QString clientId() {
-    const QString v = QSettings().value("google/clientId").toString();
-    return v.isEmpty() ? qEnvironmentVariable("IMSG_GOOGLE_CLIENT_ID") : v;
-}
-QString clientSecret() {
-    const QString v = secret::retrieve("google_client_secret");
-    return v.isEmpty() ? qEnvironmentVariable("IMSG_GOOGLE_CLIENT_SECRET") : v;
-}
-
 QString b64url(const QByteArray& b) {
     return QString::fromLatin1(
         b.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
@@ -45,13 +36,27 @@ QString b64url(const QByteArray& b) {
 GoogleContacts::GoogleContacts(QObject* parent)
     : QObject(parent), nam_(new QNetworkAccessManager(this)) {}
 
-bool GoogleContacts::configured() { return !clientId().isEmpty(); }
+bool GoogleContacts::configured() { return googleauth::configured(); }
+
+void GoogleContacts::setClient(const QString& id, const QString& secret) {
+    clientId_ = id;
+    clientSecret_ = secret;
+}
+
+// Prefer the for-this-run override entered in the dialog; else the stored/env
+// client (so an env-only setup still works).
+QString GoogleContacts::clientId() {
+    return clientId_.isEmpty() ? googleauth::clientId() : clientId_;
+}
+QString GoogleContacts::clientSecret() {
+    return clientSecret_.isEmpty() ? googleauth::clientSecret() : clientSecret_;
+}
 
 void GoogleContacts::connectAndDownload() {
-    if (!configured()) {
+    if (clientId().isEmpty()) {  // includes the for-this-run override
         emit failed(
-            "No Google client ID configured. Set IMSG_GOOGLE_CLIENT_ID (a Google "
-            "Cloud OAuth 'Desktop app' client) and restart.");
+            "No Google client configured. Enter or import an OAuth client "
+            "(Desktop app) in the Connect dialog.");
         return;
     }
 

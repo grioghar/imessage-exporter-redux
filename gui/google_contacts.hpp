@@ -21,7 +21,11 @@ class GoogleContacts : public QObject {
    public:
     explicit GoogleContacts(QObject* parent = nullptr);
 
-    static bool configured();  // a client ID is set in the environment
+    static bool configured();  // a client ID is available (keychain/settings/env)
+
+    // Set the client credentials to use for this run (so the dialog can connect
+    // without persisting them). Empty values fall back to the stored/env client.
+    void setClient(const QString& id, const QString& secret);
 
     // Runs the full flow: browser auth -> token -> download -> save to store.
     void connectAndDownload();
@@ -36,8 +40,13 @@ class GoogleContacts : public QObject {
     void fetchPage(const QString& pageToken);
     void finish();
 
+    QString clientId();
+    QString clientSecret();
+
     QNetworkAccessManager* nam_;
     QTcpServer* server_ = nullptr;
+    QString clientId_;      // for-this-run override (may be empty)
+    QString clientSecret_;  // for-this-run override (may be empty)
     QString verifier_;
     QString redirectUri_;
     QString accessToken_;
