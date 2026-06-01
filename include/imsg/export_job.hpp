@@ -34,6 +34,10 @@ struct ExportOptions {
     // is self-contained (larger files). Independent of copy_attachments.
     bool embed_attachments = false;
 
+    // When copying attachments, name the per-conversation folder with a leading
+    // dot (hidden on macOS/Linux) instead of a plain name.
+    bool hidden_attachment_dir = false;
+
     // Resolve handles to names. If `contacts_path` is non-empty it is used (a
     // .abcddb file or a directory of them); otherwise, when `use_contacts` is
     // set, the default macOS AddressBook location is loaded.

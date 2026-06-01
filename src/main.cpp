@@ -38,6 +38,7 @@ void print_usage(std::ostream& os) {
        << "  --combined       Write one combined file instead of one per chat\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
+       << "  --hidden-attachments  Name each conversation's attachment folder \".<name>\"\n"
        << "  --contacts       Resolve names via the default macOS Contacts DB\n"
        << "  --contacts-db P  Resolve names via a specific .abcddb / .vcf file or dir\n"
        << "  --contact-store  Also resolve names from the saved contacts database\n"
@@ -193,6 +194,8 @@ int main(int argc, char** argv) {
             opts.copy_attachments = true;
         } else if (arg == "--embed-attachments") {
             opts.embed_attachments = true;
+        } else if (arg == "--hidden-attachments") {
+            opts.hidden_attachment_dir = true;
         } else if (arg == "--contacts") {
             opts.use_contacts = true;
         } else if (arg == "--contact-store") {

@@ -65,12 +65,18 @@ fs::path out_path(const std::string& out_dir, const std::string& rel_utf8) {
 }
 
 // True if the chat should be exported given a people filter (empty = all).
+// Matching is substring-both-ways so a picker entry like "Jane — +15551234567"
+// matches whether the export shows the resolved name or the raw handle.
 bool matches_participants(const Chat& chat, const std::vector<std::string>& only) {
     if (only.empty()) return true;
+    auto related = [](const std::string& a, const std::string& b) {
+        return !a.empty() && !b.empty() &&
+               (a.find(b) != std::string::npos || b.find(a) != std::string::npos);
+    };
     for (const std::string& sel : only) {
-        if (chat.title() == sel) return true;
+        if (related(chat.title(), sel)) return true;
         for (const std::string& p : chat.participants)
-            if (p == sel) return true;
+            if (related(p, sel)) return true;
     }
     return false;
 }
@@ -84,13 +90,14 @@ std::string expand_user_path(const std::string& path) {
     return std::string(home) + path.substr(1);
 }
 
-// Copies a conversation's attachment files into <out_dir>/attachments/<slug>/
+// Copies a conversation's attachment files into a per-conversation folder
+// <out_dir>/<adir>/ (adir is the conversation's file stem, optionally dot-hidden)
 // and records each copied file's output-relative path on the Attachment, so the
 // renderers can link to it. Returns the number of files actually copied.
 // `seen_src` dedupes across conversations; `used_rel` keeps destination names
 // unique. Missing source files are skipped (only metadata is then exported).
 int copy_chat_attachments(Chat& chat, const std::string& out_dir,
-                          const std::string& slug,
+                          const std::string& adir,
                           std::unordered_map<std::string, std::string>& seen_src,
                           std::unordered_set<std::string>& used_rel) {
     int copied = 0;
@@ -110,9 +117,9 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
 
             std::string base = fs::path(src).filename().string();
             if (base.empty()) base = "file";
-            std::string rel = "attachments/" + slug + "/" + base;
+            std::string rel = adir + "/" + base;
             for (int n = 2; used_rel.count(rel); ++n)
-                rel = "attachments/" + slug + "/" + std::to_string(n) + "-" + base;
+                rel = adir + "/" + std::to_string(n) + "-" + base;
 
             fs::path dest = out_path(out_dir, rel);
             fs::create_directories(dest.parent_path(), ec);
@@ -284,9 +291,13 @@ ExportSummary export_database(const std::string& db_path,
             db.load_messages(chat);  // bodies for just this conversation
             if (chat.messages.empty()) continue;  // e.g. filtered out by date
 
-            if (opts.copy_attachments)
+            if (opts.copy_attachments) {
+                // Per-conversation folder named like the file stem (optionally hidden).
+                const std::string adir =
+                    (opts.hidden_attachment_dir ? "." : "") + slug;
                 summary.attachments_copied +=
-                    copy_chat_attachments(chat, out_dir, slug, seen_src, used_attach);
+                    copy_chat_attachments(chat, out_dir, adir, seen_src, used_attach);
+            }
             if (opts.embed_attachments) embed_chat_attachments(chat, embed_cache);
 
             if (opts.combined) {
