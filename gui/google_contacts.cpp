@@ -10,6 +10,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
+#include <QSettings>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrl>
@@ -25,8 +26,15 @@ const char* kScope = "https://www.googleapis.com/auth/contacts.readonly";
 const char* kPeople =
     "https://people.googleapis.com/v1/people/me/connections";
 
-QString clientId() { return qEnvironmentVariable("IMSG_GOOGLE_CLIENT_ID"); }
-QString clientSecret() { return qEnvironmentVariable("IMSG_GOOGLE_CLIENT_SECRET"); }
+// Stored in-app (entered via the GUI dialog) takes priority over the env vars.
+QString clientId() {
+    const QString v = QSettings().value("google/clientId").toString();
+    return v.isEmpty() ? qEnvironmentVariable("IMSG_GOOGLE_CLIENT_ID") : v;
+}
+QString clientSecret() {
+    const QString v = secret::retrieve("google_client_secret");
+    return v.isEmpty() ? qEnvironmentVariable("IMSG_GOOGLE_CLIENT_SECRET") : v;
+}
 
 QString b64url(const QByteArray& b) {
     return QString::fromLatin1(

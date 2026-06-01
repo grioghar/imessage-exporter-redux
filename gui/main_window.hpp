@@ -49,6 +49,8 @@ class MainWindow : public QWidget {
     void icloudFinished();
     void showHowToGetData();
     void showAbout();
+    void connectGoogle();    // prompt for client id/secret, then run the OAuth flow
+    void showGoogleSetup();  // help: how to create the Google OAuth client
     void runUpdateCheck(bool manual);
     void pickPeople();
     void copyMessagesData();  // copy chat.db (+sidecars) to a readable local cache

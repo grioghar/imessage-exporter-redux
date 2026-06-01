@@ -40,7 +40,7 @@ dependencies.
 - **Contact-name resolution** so senders show names instead of phone numbers /
   emails — from the macOS Contacts (AddressBook) database (`--contacts`), a vCard
   `.vcf` exported from iCloud.com (`--contacts-db contacts.vcf`), iCloud CardDAV
-  or **Google Contacts** (desktop app), or a **persistent saved database**
+  or **Google Contacts** (desktop app; see [docs/GOOGLE.md](docs/GOOGLE.md)), or a **persistent saved database**
   (`--contact-store`) that remembers downloaded contacts across updates.
 - **Reads from a device backup** — point `--backup` at an unencrypted
   iTunes/Finder backup and it extracts the messages (and contacts) to export,
