@@ -76,15 +76,17 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Released: **v0.2.0** — six installers attached (macOS `.dmg`, Windows
-  `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.1.0 also exists.
+- Released: **v0.2.1** (latest) — six installers (macOS `.dmg`, Windows
+  `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.2.1 adds:
+  Unicode-preserving export filenames (slugify keeps UTF-8 + `fs::u8path`),
+  macOS Full Disk Access guidance on DB-open denial, and a GUI error dialog with
+  Copy error / Open log file / Open Settings. v0.2.0 and v0.1.0 also exist.
+  IMSG_VERSION = 0.2.1; Homebrew/Choco checksums refreshed for v0.2.1.
 - `main`: everything merged — features, backup, logging, Docker (+Hub publish),
   Qt GUI with Help menu / iCloud CardDAV import / app icon / **auto-update** /
   hidden Windows console, all six installer pipelines, Homebrew + Chocolatey
   defs, this file. Version centralized in `include/imsg/version.hpp` = 0.2.0.
-- Homebrew/Choco real checksums for v0.2.0 are filled in (this session):
-  tarball `6ce6afb4…`, dmg `e973937d…`, Setup.exe `a4274889…`.
-- **Open PRs:** the checksum-fill PR (this) only.
+- **Open PRs:** the brew/choco-0.2.1 checksum-refresh PR (this) only.
 
 ## In flight / next
 - Publish to the actual registries (one-time, needs accounts): create
