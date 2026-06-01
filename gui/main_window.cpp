@@ -136,22 +136,30 @@ MainWindow::MainWindow()
     auto* filForm = new QFormLayout(filtersPage);
     auto* sinceRow = new QHBoxLayout;
     sinceOn_ = new QCheckBox("From");
+    sinceOn_->setToolTip("Only export messages on/after this date. Ticks on "
+                         "automatically when you pick a date.");
     since_ = new QDateEdit(QDate::currentDate().addYears(-1));
     since_->setDisplayFormat("yyyy-MM-dd");
     since_->setCalendarPopup(true);
-    since_->setEnabled(false);
     untilOn_ = new QCheckBox("To");
-    untilOn_->setToolTip("Leave unchecked to export from the 'From' date to now.");
+    untilOn_->setToolTip("Only export messages on/before this date. Leave "
+                         "unchecked to export from the 'From' date through today.");
     until_ = new QDateEdit(QDate::currentDate());
     until_->setDisplayFormat("yyyy-MM-dd");
     until_->setCalendarPopup(true);
-    until_->setEnabled(false);
     sinceRow->addWidget(sinceOn_);
     sinceRow->addWidget(since_);
     sinceRow->addWidget(untilOn_);
     sinceRow->addWidget(until_);
     sinceRow->addStretch();
     filForm->addRow("Date range:", sinceRow);
+    auto* dateHint = new QLabel(
+        "Tip: tick <b>From</b> and/or <b>To</b> (picking a date ticks it for you). "
+        "The export log shows the active range.");
+    dateHint->setTextFormat(Qt::RichText);
+    dateHint->setStyleSheet("color:#6e6e73");
+    dateHint->setWordWrap(true);
+    filForm->addRow("", dateHint);
 
     auto* peopleRow = new QHBoxLayout;
     peopleBtn_ = new QPushButton("Select people…");
@@ -258,7 +266,11 @@ MainWindow::MainWindow()
     driveRow->addWidget(driveFolder_);
     prefForm->addRow("", driveRow);
 
-    copyAttachments_ = new QCheckBox("Copy attachment files");
+    copyAttachments_ = new QCheckBox("Copy attachment files (needed to show pictures)");
+    copyAttachments_->setChecked(true);  // so images/movies show by default
+    copyAttachments_->setToolTip("Copy each conversation's pictures, movies and "
+                                 "files next to the export so they display inline. "
+                                 "On macOS, HEIC photos are converted to JPEG.");
     embedAttachments_ = new QCheckBox("Embed attachments (larger files)");
     embedAttachments_->setToolTip("Inline pictures, movies and files as base64 so "
                                   "each HTML/JSON file is self-contained.");
@@ -338,9 +350,8 @@ MainWindow::MainWindow()
     connect(dbBrowse_, &QPushButton::clicked, this, &MainWindow::browseDatabase);
     connect(outBrowse, &QPushButton::clicked, this, &MainWindow::browseOutput);
     connect(contactsBrowse_, &QPushButton::clicked, this, &MainWindow::browseContacts);
-    connect(sinceOn_, &QCheckBox::toggled, since_, &QWidget::setEnabled);
-    connect(untilOn_, &QCheckBox::toggled, until_, &QWidget::setEnabled);
-    // Changing a date activates its filter (so picking a "From" date just works).
+    // The date edits stay enabled; picking a date turns its bound on so users
+    // don't have to find the checkbox first (a long-standing point of confusion).
     connect(since_, &QDateEdit::dateChanged, this,
             [this] { sinceOn_->setChecked(true); });
     connect(until_, &QDateEdit::dateChanged, this,
@@ -657,12 +668,14 @@ void MainWindow::startExportResuming(bool resume) {
                                          : QDir::tempPath() + "/imsg-pdf-html";
         QDir().mkpath(pdfHtmlDir_);
         out_dir = pdfHtmlDir_.toStdString();
-        // QTextDocument renders <img>/hero cards in place (no lazy/JS), but it
-        // needs the picture bytes: make sure attachments are copied next to the
-        // intermediate HTML so the PDF embeds them (resolved via the base URL set
-        // in exportFinished). Embedding, if the user chose it, also works.
-        if (!opts.embed_attachments) opts.copy_attachments = true;
     }
+
+    // Pictures/movies only render inline when their bytes are alongside the
+    // export. For the visual formats, copy attachments unless the user is
+    // embedding them — otherwise images would degrade to bare links.
+    const QString fmtName = format_->currentText();
+    if ((fmtName == "html" || fmtName == "pdf") && !opts.embed_attachments)
+        opts.copy_attachments = true;
 
     imsg::LogLevel lvl;
     if (imsg::parse_log_level(logLevel_->currentText().toStdString(), lvl))
@@ -895,7 +908,7 @@ void MainWindow::loadSettings() {
     const QDate ud = QDate::fromString(s.value("ui/until").toString(), "yyyy-MM-dd");
     if (ud.isValid()) { until_->blockSignals(true); until_->setDate(ud); until_->blockSignals(false); }
     combined_->setChecked(s.value("ui/combined", false).toBool());
-    copyAttachments_->setChecked(s.value("ui/copy", false).toBool());
+    copyAttachments_->setChecked(s.value("ui/copy", true).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
     richPreviews_->setChecked(s.value("ui/richPreviews", false).toBool());

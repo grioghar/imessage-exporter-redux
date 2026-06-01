@@ -14,6 +14,7 @@
 #include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
 #include "imsg/log.hpp"
+#include "imsg/time_util.hpp"
 
 namespace fs = std::filesystem;
 
@@ -117,20 +118,48 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
 
             std::string base = fs::path(src).filename().string();
             if (base.empty()) base = "file";
-            std::string rel = adir + "/" + base;
-            for (int n = 2; used_rel.count(rel); ++n)
-                rel = adir + "/" + std::to_string(n) + "-" + base;
 
-            fs::path dest = out_path(out_dir, rel);
-            fs::create_directories(dest.parent_path(), ec);
-            fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec);
-            if (ec) continue;  // copy failed: leave as metadata-only
+            auto unique_rel = [&](const std::string& b) {
+                std::string r = adir + "/" + b;
+                for (int n = 2; used_rel.count(r); ++n)
+                    r = adir + "/" + std::to_string(n) + "-" + b;
+                return r;
+            };
+
+            bool ok = false;
+            std::string rel;
+#ifdef __APPLE__
+            // HEIC/HEIF won't display in browsers or the PDF engine; transcode it
+            // to JPEG with macOS `sips` so the picture actually shows.
+            std::string ext = fs::path(base).extension().string();
+            for (char& c : ext) c = static_cast<char>(std::tolower((unsigned char)c));
+            if ((ext == ".heic" || ext == ".heif") &&
+                src.find('"') == std::string::npos) {
+                rel = unique_rel(fs::path(base).stem().string() + ".jpg");
+                fs::path dest = out_path(out_dir, rel);
+                fs::create_directories(dest.parent_path(), ec);
+                if (dest.string().find('"') == std::string::npos) {
+                    const std::string cmd = "sips -s format jpeg \"" + src +
+                                            "\" --out \"" + dest.string() +
+                                            "\" >/dev/null 2>&1";
+                    if (std::system(cmd.c_str()) == 0 && fs::exists(dest, ec)) ok = true;
+                }
+            }
+#endif
+            if (!ok) {  // non-HEIC, or transcode unavailable/failed: plain copy
+                rel = unique_rel(base);
+                fs::path dest = out_path(out_dir, rel);
+                fs::create_directories(dest.parent_path(), ec);
+                fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec);
+                ok = !ec;
+            }
+            if (!ok) continue;  // leave as metadata-only
 
             used_rel.insert(rel);
             seen_src.emplace(src, rel);
             a.copied_path = rel;
             ++copied;
-            log_info("copied attachment: " + base);
+            log_info("copied attachment: " + fs::path(rel).filename().string());
         }
     }
     return copied;
@@ -233,6 +262,16 @@ ExportSummary export_database(const std::string& db_path,
 
         MessagesDatabase db(db_path, opts.me_label);
         db.set_date_range(opts.has_since, opts.since, opts.has_until, opts.until);
+        // Make the active window visible in the log so it's obvious whether the
+        // date filter is in effect (a frequent point of confusion).
+        if (opts.has_since || opts.has_until) {
+            std::string when = "date filter:";
+            if (opts.has_since) when += " from " + format_timestamp(opts.since);
+            if (opts.has_until) when += " to " + format_timestamp(opts.until);
+            log_info(when);
+        } else {
+            log_info("date filter: none (exporting all dates)");
+        }
         if (!contacts.empty()) db.set_contacts(&contacts);
         db.open();
         std::vector<Chat> chats = db.load_chat_index();

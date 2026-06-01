@@ -353,6 +353,36 @@ void test_attachment_embed_html() {
           "embed: inline image data URI in HTML");
 }
 
+void test_url_only_message_card() {
+    // A message that is just a link should render the card/embed only — not the
+    // bare URL above it (which looked like stray "weird text").
+    imsg::Chat c;
+    c.chat_identifier = "+15550002222";
+    c.participants = {"+15550002222"};
+    imsg::Message m;
+    m.is_from_me = false;
+    m.sender = "+15550002222";
+    m.text = "https://www.facebook.com/x";
+    c.messages.push_back(m);
+    const std::string h = imsg::render_html(c);
+    check(contains(h, "class=\"linkcard\""), "urlonly: link card is shown");
+    // linkify_html would render the URL as the anchor's visible text; the card
+    // never does, so this exact fragment proves the bare link was suppressed.
+    check(!contains(h, ">https://www.facebook.com/x</a>"),
+          "urlonly: bare URL link suppressed in favor of the card");
+
+    // A message mixing words + a link still shows the text and the card.
+    imsg::Chat c2;
+    c2.participants = {"+15550002222"};
+    imsg::Message m2;
+    m2.sender = "+15550002222";
+    m2.text = "look https://www.facebook.com/x";
+    c2.messages.push_back(m2);
+    const std::string h2 = imsg::render_html(c2);
+    check(contains(h2, "look ") && contains(h2, "class=\"linkcard\""),
+          "urlonly: mixed text keeps both the words and the card");
+}
+
 void test_inline_media_fallback() {
     // The Messages DB often leaves attachment.mime_type empty; pictures/movies
     // must still inline (guessed from the file name), not degrade to bare links.
@@ -430,6 +460,7 @@ int main() {
     test_attachment_copied_path();
     test_linkify_and_embeds();
     test_link_preview_resolver();
+    test_url_only_message_card();
     test_attachment_embed_html();
     test_inline_media_fallback();
     test_markdown_export();
