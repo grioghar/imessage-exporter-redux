@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$version = '0.2.8'
+$version = '0.3.0'
 $url     = "https://github.com/grioghar/imessage-exporter-redux/releases/download/v$version/iMessage-Exporter-Setup.exe"
 
 $packageArgs = @{
@@ -10,7 +10,7 @@ $packageArgs = @{
   silentArgs     = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
   validExitCodes = @(0)
   softwareName   = 'iMessage Exporter*'
-  checksum64     = 'be5a0fa9f195d5d2bcccefaaabc05f45cd63fee9f8ac3c531593c1bc2273f288'
+  checksum64     = '4ae136c443976e14d601537e8fd1e3cf99e960ae7e6c848f4cef8c37e1568a66'
   checksumType64 = 'sha256'
 }
 
