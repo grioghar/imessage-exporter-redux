@@ -76,7 +76,8 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Releasing: **v0.2.2** — HTML URL links open in a new window; YouTube/Spotify/
+- Released: **v0.2.2** (latest; six installers; brew/choco checksums refreshed)
+  — HTML URL links open in a new window; YouTube/Spotify/
   Vimeo embeds; `--embed-attachments` inlines media as base64 data URIs; the
   displayed version now carries a build stamp `IMSG_VERSION-DDMMYYHHMM`
   (CMake `string(TIMESTAMP)` -> generated `imsg/build_stamp.hpp`, consumed only
