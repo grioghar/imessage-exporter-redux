@@ -42,11 +42,35 @@ jobs:
             "$APP/Contents/Info.plist" \
             || /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" \
             "$APP/Contents/Info.plist"
-      - name: Bundle Qt + make DMG
+      - name: Bundle Qt, sign, and build DMG (both install targets)
         run: |
-          macdeployqt "build/iMessage Exporter.app" -dmg
+          APP="build/iMessage Exporter.app"
+          macdeployqt "$APP"
+          # Ad-hoc signature: a stable code identity so macOS TCC (Full Disk
+          # Access) recognizes the app and the grant sticks.
+          codesign --force --deep --sign - "$APP"
+          # Staging: the app, a drag-to-/Applications shortcut (admin install),
+          # and a double-click script that installs to ~/Applications (no admin).
+          rm -rf dmgroot && mkdir dmgroot
+          cp -R "$APP" dmgroot/
+          ln -s /Applications "dmgroot/Applications"
+          cat > "dmgroot/Install for current user.command" <<'EOF'
+          #!/bin/bash
+          # Installs iMessage Exporter into your personal ~/Applications folder,
+          # no administrator password required.
+          set -e
+          here="$(cd "$(dirname "$0")" && pwd)"
+          mkdir -p "$HOME/Applications"
+          rm -rf "$HOME/Applications/iMessage Exporter.app"
+          cp -R "$here/iMessage Exporter.app" "$HOME/Applications/"
+          xattr -dr com.apple.quarantine "$HOME/Applications/iMessage Exporter.app" || true
+          echo "Installed to $HOME/Applications/iMessage Exporter.app"
+          echo "You can close this window."
+          EOF
+          chmod +x "dmgroot/Install for current user.command"
           mkdir -p dist
-          mv "build/iMessage Exporter.dmg" "dist/iMessage-Exporter-macOS.dmg"
+          hdiutil create -volname "iMessage Exporter" -srcfolder dmgroot \
+            -ov -format UDZO "dist/iMessage-Exporter-macOS.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: imessage-exporter-macos

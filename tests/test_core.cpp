@@ -312,6 +312,18 @@ void test_attachment_embed_html() {
           "embed: inline image data URI in HTML");
 }
 
+void test_markdown_export() {
+    imsg::Format f;
+    check(imsg::parse_format("md", f) && f == imsg::Format::Markdown, "md: parse md");
+    check(imsg::parse_format("markdown", f) && f == imsg::Format::Markdown,
+          "md: parse markdown");
+    check_eq(imsg::extension_for(imsg::Format::Markdown), "md", "md: extension");
+    std::string md = imsg::render_markdown(make_chat());
+    check(contains(md, "# "), "md: heading");
+    check(contains(md, "Hello there"), "md: message text");
+    check(contains(md, "**"), "md: bold sender");
+}
+
 void test_chat_title() {
     imsg::Chat c;
     c.rowid = 7;
@@ -343,6 +355,7 @@ int main() {
     test_attachment_copied_path();
     test_linkify_and_embeds();
     test_attachment_embed_html();
+    test_markdown_export();
     test_chat_title();
 
     if (g_failures == 0) {

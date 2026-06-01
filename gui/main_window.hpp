@@ -51,6 +51,7 @@ class MainWindow : public QWidget {
     void showAbout();
     void runUpdateCheck(bool manual);
     void pickPeople();
+    void copyMessagesData();  // copy chat.db (+sidecars) to a readable local cache
 
    private:
     // Validates the form and fills the engine inputs; returns false (+ message)
@@ -74,6 +75,7 @@ class MainWindow : public QWidget {
     QLineEdit* dbPath_ = nullptr;
     QPushButton* dbBrowse_ = nullptr;
     QComboBox* backup_ = nullptr;
+    QPushButton* copyDbBtn_ = nullptr;
 
     // Options.
     QComboBox* format_ = nullptr;
@@ -112,6 +114,9 @@ class MainWindow : public QWidget {
 
     QPushButton* peopleBtn_ = nullptr;
     QLabel* peopleLabel_ = nullptr;
+    bool wantPdf_ = false;     // export to HTML in a temp dir, then convert to PDF
+    QString pdfRealOut_;       // the user's chosen output dir for the PDFs
+    QString pdfHtmlDir_;       // temp dir holding the intermediate HTML
     QStringList selectedPeople_;  // empty = all conversations
     bool jobRunning_ = false;
     bool resuming_ = false;       // current run is resuming a prior job
