@@ -5,8 +5,8 @@
 class ImessageExporter < Formula
   desc "Export macOS iMessage/SMS history to TXT, JSON, or HTML"
   homepage "https://github.com/grioghar/imessage-exporter-redux"
-  url "https://github.com/grioghar/imessage-exporter-redux/archive/refs/tags/v0.2.6.tar.gz"
-  sha256 "a05a8482ac81e0dea482e6e95fb5bb91585e50dc7aadc2275963c6a2ab9bde80"
+  url "https://github.com/grioghar/imessage-exporter-redux/archive/refs/tags/v0.2.7.tar.gz"
+  sha256 "49d9a3238dedc96629e1ad3be9191118720a1f078a97f2f87ddbd9ff6b49ceab"
   license "MIT"
   head "https://github.com/grioghar/imessage-exporter-redux.git", branch: "main"
 
