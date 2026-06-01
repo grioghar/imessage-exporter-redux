@@ -300,8 +300,12 @@ void test_linkify_and_embeds() {
     check(contains(imsg::media_embeds_html("https://open.spotify.com/track/abc123"),
                    "open.spotify.com/embed/track/abc123"),
           "embed: spotify");
-    check_eq(imsg::media_embeds_html("https://example.com/page"), "",
-             "embed: none for unknown host");
+    check(contains(imsg::media_embeds_html("https://www.facebook.com/x"),
+                   "class=\"linkcard\"") &&
+              contains(imsg::media_embeds_html("https://www.facebook.com/x"),
+                       "facebook.com"),
+          "embed: link card for non-embeddable host");
+    check_eq(imsg::media_embeds_html("no links here"), "", "embed: none without URLs");
 }
 
 void test_attachment_embed_html() {

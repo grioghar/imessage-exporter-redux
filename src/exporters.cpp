@@ -95,7 +95,15 @@ const char* kHtmlStyle =
     "display:block;font-style:normal}"
     "a.attachment{color:inherit}.bubble a{color:inherit;text-decoration:underline}"
     ".embed{width:100%;max-width:560px;height:315px;border:0;border-radius:.6rem;"
-    "margin-top:.4rem;display:block}";
+    "margin-top:.4rem;display:block}"
+    ".linkcard{display:flex;align-items:center;gap:.6rem;max-width:560px;margin-top:"
+    ".4rem;padding:.5rem .7rem;border:1px solid rgba(0,0,0,.12);border-radius:.6rem;"
+    "background:#fff;text-decoration:none!important;color:#1d1d1f}"
+    ".linkcard-icon{width:32px;height:32px;border-radius:.3rem;flex:0 0 auto}"
+    ".linkcard-body{display:flex;flex-direction:column;min-width:0}"
+    ".linkcard-host{font-weight:600;font-size:.9rem}"
+    ".linkcard-url{color:#6e6e73;font-size:.75rem;overflow:hidden;"
+    "text-overflow:ellipsis;white-space:nowrap}";
 
 }  // namespace
 
@@ -313,6 +321,31 @@ std::string iframe(const std::string& src) {
            "\" loading=\"lazy\" allowfullscreen></iframe>";
 }
 
+// Host of a URL, without scheme or "www." (e.g. "facebook.com").
+std::string host_of(const std::string& url) {
+    std::size_t p = url.find("://");
+    std::size_t start = (p == std::string::npos) ? 0 : p + 3;
+    std::size_t end = url.find('/', start);
+    std::string host =
+        url.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (host.compare(0, 4, "www.") == 0) host = host.substr(4);
+    return host;
+}
+
+// A "pretty" link-preview card (favicon + host + URL) for links we can't embed
+// as a player. The favicon is fetched by the browser when the file is viewed.
+std::string link_card(const std::string& url) {
+    const std::string ehost = html_escape(host_of(url));
+    const std::string eurl = html_escape(url);
+    return "<a class=\"linkcard\" href=\"" + eurl +
+           "\" target=\"_blank\" rel=\"noopener noreferrer\">"
+           "<img class=\"linkcard-icon\" alt=\"\" "
+           "src=\"https://www.google.com/s2/favicons?sz=64&amp;domain=" + ehost +
+           "\">"
+           "<span class=\"linkcard-body\"><span class=\"linkcard-host\">" + ehost +
+           "</span><span class=\"linkcard-url\">" + eurl + "</span></span></a>";
+}
+
 // One conversation as a self-contained <div class="conversation"> block, shared
 // by the single-chat document and the combined multi-chat document.
 std::string html_conversation(const Chat& chat) {
@@ -417,6 +450,8 @@ std::string media_embeds_html(const std::string& text) {
             out += iframe("https://open.spotify.com/embed/" + id);
         else if (!(id = vimeo_id(url)).empty())
             out += iframe("https://player.vimeo.com/video/" + id);
+        else
+            out += link_card(url);  // Facebook, news, etc.: a favicon+host card
     }
     return out;
 }

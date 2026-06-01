@@ -163,10 +163,14 @@ MainWindow::MainWindow()
     embedAttachments_ = new QCheckBox("Embed attachments (larger files)");
     embedAttachments_->setToolTip("Inline pictures, movies and files as base64 so "
                                   "each HTML/JSON file is self-contained.");
+    hiddenAttachDir_ = new QCheckBox("Hidden attachments folder");
+    hiddenAttachDir_->setToolTip("Name each conversation's attachments folder with "
+                                 "a leading dot (hidden on macOS/Linux).");
     auto* flags = new QHBoxLayout;
     flags->addWidget(combined_);
     flags->addWidget(copyAttachments_);
     flags->addWidget(embedAttachments_);
+    flags->addWidget(hiddenAttachDir_);
     flags->addStretch();
     form->addRow("", flags);
 
@@ -264,6 +268,11 @@ MainWindow::MainWindow()
     connect(contactsBrowse_, &QPushButton::clicked, this, &MainWindow::browseContacts);
     connect(sinceOn_, &QCheckBox::toggled, since_, &QWidget::setEnabled);
     connect(untilOn_, &QCheckBox::toggled, until_, &QWidget::setEnabled);
+    // Changing a date activates its filter (so picking a "From" date just works).
+    connect(since_, &QDateEdit::dateChanged, this,
+            [this] { sinceOn_->setChecked(true); });
+    connect(until_, &QDateEdit::dateChanged, this,
+            [this] { untilOn_->setChecked(true); });
     connect(exportBtn_, &QPushButton::clicked, this, &MainWindow::startExport);
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
     connect(icloudBtn_, &QPushButton::clicked, this,
@@ -402,6 +411,7 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.combined = combined_->isChecked();
     opts.copy_attachments = copyAttachments_->isChecked();
     opts.embed_attachments = embedAttachments_->isChecked();
+    opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
 
     if (sinceOn_->isChecked() &&
         imsg::parse_date(since_->date().toString("yyyy-MM-dd").toStdString(), opts.since))
@@ -698,6 +708,7 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/combined", combined_->isChecked());
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
+    s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
     s.setValue("ui/contacts", contacts_->currentIndex());
     s.setValue("ui/contactsPath", contactsPath_->text());
     s.setValue("ui/logLevel", logLevel_->currentText());
@@ -714,13 +725,15 @@ void MainWindow::loadSettings() {
     meLabel_->setText(s.value("ui/me", "Me").toString());
     sinceOn_->setChecked(s.value("ui/sinceOn", false).toBool());
     untilOn_->setChecked(s.value("ui/untilOn", false).toBool());
+    // Block dateChanged so restoring a saved date doesn't auto-tick the filter.
     const QDate sd = QDate::fromString(s.value("ui/since").toString(), "yyyy-MM-dd");
-    if (sd.isValid()) since_->setDate(sd);
+    if (sd.isValid()) { since_->blockSignals(true); since_->setDate(sd); since_->blockSignals(false); }
     const QDate ud = QDate::fromString(s.value("ui/until").toString(), "yyyy-MM-dd");
-    if (ud.isValid()) until_->setDate(ud);
+    if (ud.isValid()) { until_->blockSignals(true); until_->setDate(ud); until_->blockSignals(false); }
     combined_->setChecked(s.value("ui/combined", false).toBool());
     copyAttachments_->setChecked(s.value("ui/copy", false).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
+    hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
     contacts_->setCurrentIndex(s.value("ui/contacts", 0).toInt());
     contactsPath_->setText(s.value("ui/contactsPath").toString());
     logLevel_->setCurrentText(s.value("ui/logLevel", "info").toString());
@@ -803,15 +816,20 @@ void MainWindow::pickPeople() {
 
     QStringList people;
     try {
+        // Keep raw handles (no set_contacts) so we can show "Name — number".
         imsg::MessagesDatabase db(db_path, opts.me_label);
-        if (!book.empty()) db.set_contacts(&book);
         db.open();
         QSet<QString> seen;
         for (const imsg::Chat& c : db.load_chat_index()) {
             if (c.message_count == 0) continue;
             for (const std::string& p : c.participants) {
-                QString q = QString::fromStdString(p);
-                if (!q.isEmpty() && !seen.contains(q)) { seen.insert(q); people << q; }
+                if (p.empty()) continue;
+                const QString handle = QString::fromStdString(p);
+                const std::string nm = book.name_for(p);
+                const QString disp =
+                    nm.empty() ? handle
+                               : QString::fromStdString(nm) + "  —  " + handle;
+                if (!seen.contains(disp)) { seen.insert(disp); people << disp; }
             }
         }
     } catch (const imsg::DatabaseError& e) {
