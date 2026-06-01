@@ -54,6 +54,7 @@ class MainWindow : public QWidget {
     void showGoogleSetup();  // help: how to create the Google OAuth client
     void connectDrive();     // authorize Google Drive (persisted) for uploads
     void driveUploadFinished();
+    void showFullDiskAccessHelp();  // macOS: grant FDA / fix quarantine
 
    private:
     // Prompt for the Google OAuth client (ID/secret, or imported JSON) and

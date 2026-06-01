@@ -278,7 +278,8 @@ void test_attachment_copied_path() {
     imsg::Chat c = make_chat();  // message 3 has an image/jpeg attachment
     c.messages[2].attachments[0].copied_path = "attachments/x/photo.jpg";
     check(contains(imsg::render_html(c),
-                   "<img class=\"attachment\" src=\"attachments/x/photo.jpg\""),
+                   "<img class=\"attachment\" loading=\"lazy\" "
+                   "src=\"attachments/x/photo.jpg\""),
           "attach: html embeds copied image");
     check(contains(imsg::render_text(c), "-> attachments/x/photo.jpg"),
           "attach: text shows copied path");

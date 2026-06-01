@@ -256,6 +256,10 @@ MainWindow::MainWindow()
     auto* menuBar = new QMenuBar;
     QMenu* helpMenu = menuBar->addMenu("&Help");
     helpMenu->addAction("How to get your data…", this, &MainWindow::showHowToGetData);
+#ifdef Q_OS_MACOS
+    helpMenu->addAction("Fix Full Disk Access…", this,
+                        &MainWindow::showFullDiskAccessHelp);
+#endif
     helpMenu->addAction("Google Contacts setup…", this, &MainWindow::showGoogleSetup);
     helpMenu->addAction("Online documentation", this, [] {
         QDesktopServices::openUrl(
@@ -413,11 +417,22 @@ void MainWindow::onContactsChanged() {
 }
 
 void MainWindow::browseDatabase() {
-    QString f = QFileDialog::getOpenFileName(
-        this, "Choose a Messages database (chat.db / sms.db)", QDir::homePath(),
-        "Databases (*.db *.sqlite *.sqlitedb);;All files (*)");
-    if (f.isEmpty()) return;
-    dbPath_->setText(f);
+    // Start in the Messages folder so chat.db is easy to find, and show hidden
+    // entries so ~/Library is navigable. On macOS use Qt's own dialog: the native
+    // panel can fail to browse the TCC-protected Messages folder, and (for some
+    // quarantined builds) not appear at all.
+    QFileDialog dlg(this, "Choose a Messages database (chat.db / sms.db)");
+    dlg.setFileMode(QFileDialog::ExistingFile);
+    dlg.setNameFilter("Databases (*.db *.sqlite *.sqlitedb);;All files (*)");
+    dlg.setFilter(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot);
+    QString start = QDir::homePath() + "/Library/Messages";
+    if (!QFileInfo::exists(start)) start = QDir::homePath();
+    dlg.setDirectory(start);
+#ifdef Q_OS_MACOS
+    dlg.setOption(QFileDialog::DontUseNativeDialog, true);
+#endif
+    if (dlg.exec() != QDialog::Accepted || dlg.selectedFiles().isEmpty()) return;
+    dbPath_->setText(dlg.selectedFiles().first());
     const int idx = source_->findData(SrcFile);  // auto-switch Source to "Database file"
     if (idx >= 0) source_->setCurrentIndex(idx);
     onSourceChanged();
@@ -668,7 +683,7 @@ void MainWindow::showExportError(const QString& error, const QString& title) {
     QPushButton* copyBtn = buttons->addButton("Copy error", QDialogButtonBox::ActionRole);
     QPushButton* logBtn = buttons->addButton("Open log file", QDialogButtonBox::ActionRole);
     QPushButton* settingsBtn = error.contains("Full Disk Access")
-        ? buttons->addButton("Open Settings", QDialogButtonBox::ActionRole)
+        ? buttons->addButton("Full Disk Access help…", QDialogButtonBox::ActionRole)
         : nullptr;
     buttons->addButton(QDialogButtonBox::Close);
     layout->addWidget(buttons);
@@ -678,11 +693,8 @@ void MainWindow::showExportError(const QString& error, const QString& title) {
     connect(logBtn, &QPushButton::clicked, this,
             [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(logFilePath_)); });
     if (settingsBtn)
-        connect(settingsBtn, &QPushButton::clicked, this, [] {
-            QDesktopServices::openUrl(QUrl(
-                "x-apple.systempreferences:com.apple.preference.security?"
-                "Privacy_AllFiles"));
-        });
+        connect(settingsBtn, &QPushButton::clicked, &dlg,
+                [this] { showFullDiskAccessHelp(); });
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     dlg.exec();
 }
@@ -1136,6 +1148,79 @@ void MainWindow::showGoogleSetup() {
         "files it creates). Full guide: "
         "<a href=\"https://github.com/grioghar/imessage-exporter-redux/blob/main/"
         "docs/GOOGLE.md\">docs/GOOGLE.md</a>.</p>");
+}
+
+void MainWindow::showFullDiskAccessHelp() {
+    QString appBundle = QApplication::applicationDirPath();  // …/X.app/Contents/MacOS
+    const int dotApp = appBundle.indexOf(".app/");
+    if (dotApp > 0) appBundle = appBundle.left(dotApp + 4);
+    const bool translocated = appBundle.contains("/AppTranslocation/");
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Full Disk Access");
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* label = new QLabel(
+        "<h3>Let the app read Messages &amp; Contacts directly</h3>"
+        "<p>macOS needs <b>Full Disk Access</b> for this app to read "
+        "<code>~/Library/Messages/chat.db</code>. If the app won't appear when you "
+        "press <b>+</b> in that list, it's almost always because the copy you're "
+        "running is still <i>quarantined</i> or running <i>translocated</i> from the "
+        "disk image.</p>"
+        "<ol>"
+        "<li><b>Move the app to Applications.</b> Drag <b>iMessage Exporter</b> from "
+        "the .dmg into <b>/Applications</b> (or <b>~/Applications</b>) and launch it "
+        "from there — not from the mounted disk image.</li>"
+        "<li><b>Remove the quarantine flag</b> (this is what makes it show up in the "
+        "list). Click <b>Copy de-quarantine command</b>, paste it into <b>Terminal</b>, "
+        "and press Return.</li>"
+        "<li><b>Add it to Full Disk Access.</b> Click <b>Open Full Disk Access "
+        "settings</b>, press <b>+</b>, choose the app in /Applications, switch it "
+        "<b>on</b>, then re-open iMessage Exporter.</li>"
+        "</ol>"
+        "<p><b>Prefer not to use Terminal?</b> Click <b>\"Copy Messages data to a local "
+        "cache\"</b> on the main window — it copies <code>chat.db</code> somewhere "
+        "readable so you can export without granting Full Disk Access at all.</p>",
+        &dlg);
+    label->setTextFormat(Qt::RichText);
+    label->setWordWrap(true);
+    label->setOpenExternalLinks(true);
+    label->setMinimumWidth(560);
+    layout->addWidget(label);
+
+    if (translocated) {
+        auto* warn = new QLabel(
+            "<p style='color:#b00020'>⚠︎ This copy is running <b>translocated</b> from a "
+            "read-only location, so it can't be added to Full Disk Access. Move it to "
+            "/Applications and relaunch first.</p>",
+            &dlg);
+        warn->setTextFormat(Qt::RichText);
+        warn->setWordWrap(true);
+        layout->addWidget(warn);
+    }
+
+    auto* buttons = new QDialogButtonBox(&dlg);
+    QPushButton* openSettings =
+        buttons->addButton("Open Full Disk Access settings", QDialogButtonBox::ActionRole);
+    QPushButton* copyCmd =
+        buttons->addButton("Copy de-quarantine command", QDialogButtonBox::ActionRole);
+    QPushButton* reveal =
+        buttons->addButton("Reveal app in Finder", QDialogButtonBox::ActionRole);
+    buttons->addButton(QDialogButtonBox::Close);
+    layout->addWidget(buttons);
+
+    connect(openSettings, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"));
+    });
+    connect(copyCmd, &QPushButton::clicked, this, [appBundle] {
+        QApplication::clipboard()->setText(
+            "xattr -dr com.apple.quarantine \"" + appBundle + "\"");
+    });
+    connect(reveal, &QPushButton::clicked, this, [appBundle] {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(appBundle).absolutePath()));
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    dlg.exec();
 }
 
 bool MainWindow::promptForGoogleClient(QString& id, QString& secret) {
