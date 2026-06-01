@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "google_contacts.hpp"
+#include "google_drive.hpp"
 #include "icloud_contacts.hpp"
 #include "imsg/export_job.hpp"
 #include "updater.hpp"
@@ -51,6 +52,18 @@ class MainWindow : public QWidget {
     void showAbout();
     void connectGoogle();    // prompt for client id/secret, then run the OAuth flow
     void showGoogleSetup();  // help: how to create the Google OAuth client
+    void connectDrive();     // authorize Google Drive (persisted) for uploads
+    void driveUploadFinished();
+
+   private:
+    // Prompt for the Google OAuth client (ID/secret, or imported JSON) and
+    // persist it encrypted per the dialog's checkbox. Returns false if cancelled
+    // or no client ID was provided. Shared by the Contacts + Drive connectors.
+    bool promptForGoogleClient(QString& id, QString& secret);
+    // If "Upload to Drive" is on and Drive is connected, push `dir` to Drive.
+    void maybeUploadToDrive(const QString& dir);
+
+   private slots:
     void runUpdateCheck(bool manual);
     void pickPeople();
     void copyMessagesData();  // copy chat.db (+sidecars) to a readable local cache
@@ -98,6 +111,10 @@ class MainWindow : public QWidget {
     QPushButton* icloudBtn_ = nullptr;
     QPushButton* googleBtn_ = nullptr;
     GoogleContacts* google_ = nullptr;
+    QPushButton* driveBtn_ = nullptr;      // connect/reconnect Google Drive
+    QCheckBox* uploadDrive_ = nullptr;     // upload the export to Drive when done
+    QLineEdit* driveFolder_ = nullptr;     // target Drive folder name
+    GoogleDrive* drive_ = nullptr;
     QComboBox* logLevel_ = nullptr;
 
     QPushButton* exportBtn_ = nullptr;
@@ -107,6 +124,7 @@ class MainWindow : public QWidget {
 
     QFutureWatcher<imsg::ExportSummary> watcher_;
     QFutureWatcher<icloud::Result> icloudWatcher_;
+    QFutureWatcher<drive::UploadResult> driveWatcher_;
     std::shared_ptr<std::mutex> logMutex_;
     std::shared_ptr<std::vector<std::string>> logBuffer_;
     QTemporaryDir tempDir_;  // holds files extracted from a backup

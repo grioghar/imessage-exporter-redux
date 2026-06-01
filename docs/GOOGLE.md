@@ -26,21 +26,47 @@ OAuth client once and paste it into **Connect Google Contacts…** (it also read
      contacts you'll export. (Test users can sign in immediately with no Google
      verification.)
    - **Data access:** **Add or remove scopes** → add
-     **`https://www.googleapis.com/auth/contacts.readonly`** → Update/Save.
+     **`https://www.googleapis.com/auth/contacts.readonly`** → Update/Save. To
+     also upload exports to Drive, add **`https://www.googleapis.com/auth/drive.file`**
+     (the app can only touch files it creates — see *Google Drive upload* below).
 4. **Create the client** — **Clients → Create client** (a.k.a. Credentials →
    Create credentials → OAuth client ID), Application type **Desktop app**, name
    it anything, **Create**.
-5. **Copy** the **Client ID** and **Client secret** from the dialog.
+5. **Download JSON** (the ⬇ button next to the client) — or just copy the
+   **Client ID** and **Client secret** from the dialog.
 
 ## Use it in the app
 
-1. Click **Connect Google Contacts…**, paste the **Client ID** + **Client
-   secret**, click **Connect**.
-2. Approve the read-only contacts access in the browser window that opens (the
-   app listens on a local `http://127.0.0.1` loopback redirect — the modern
-   Desktop-app flow; the old "out-of-band/OOB" copy-paste code flow is retired).
+1. Click **Connect Google Contacts…**. Either click **Import client JSON…** and
+   pick the file you downloaded, or paste the **Client ID** + **Client secret**.
+   Leave **Save credentials (encrypted in the OS keychain)** ticked to remember
+   them (stored encrypted, never in plaintext settings); untick it to use them
+   only for this run.
+2. Click **Continue/Connect** and approve the read-only contacts access in the
+   browser window that opens (the app listens on a local `http://127.0.0.1`
+   loopback redirect — the modern Desktop-app flow; the old "out-of-band/OOB"
+   copy-paste code flow is retired).
 3. Contacts download into the persistent contacts database; pick **"Saved
    contacts database"** under **Names** to use them.
+
+## Google Drive upload
+
+Send each export straight to your Drive:
+
+1. Make sure the **`drive.file`** scope is added (setup step 3) and you've set up
+   the OAuth client (above).
+2. Click **Connect Google Drive…** and approve access in the browser. The
+   authorization (a refresh token) is **saved encrypted in your OS keychain**, so
+   you only do this once — future exports upload without signing in again.
+3. Enter a **Drive folder name** (e.g. `iMessage Export`) and tick **Upload
+   export to Drive when finished**.
+4. Run an export. When it completes, the whole output folder — files **and** the
+   per-conversation attachment subfolders — is uploaded into that Drive folder
+   (created if it doesn't exist). PDF exports upload the generated PDFs.
+
+`drive.file` is **least-privilege**: the app can only see and manage the files it
+creates, never the rest of your Drive. To revoke, remove the app at
+[myaccount.google.com → Security → Third-party access](https://myaccount.google.com/connections).
 
 ## Important: the 7‑day Testing limit (and why we keep it in Testing)
 

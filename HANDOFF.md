@@ -76,7 +76,38 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- **v0.2.8 IN PROGRESS** (branch `feat/0.2.8-og-previews`): **true Open Graph
+- **v0.3.0 IN PROGRESS** (branch `feat/0.3.0-media-drive`): big batch.
+  1. **Inline media fix** — the HTML/Markdown renderers keyed inline `<img>`/
+     `<video>` off `attachment.mime_type`, which the Messages DB often leaves
+     empty, so pictures/movies degraded to bare links. Added `effective_mime()`
+     (guesses from file/transfer/copied-path extension; shared `mime_from_ext`)
+     in exporters.cpp; images now `<img loading="lazy">` linking to the copy,
+     movies `<video controls preload="none">` with a fallback link, Markdown
+     `![](path)`. Test `test_inline_media_fallback`.
+  2. **PDF in place** — `startExportResuming` forces copy (if not embedding) for
+     PDF; `exportFinished` sets `QTextDocument::setBaseUrl` to the temp HTML dir
+     so relative copied images embed into the PDF. (HEIC won't decode in
+     QTextDocument — JPEG/PNG/GIF do; note as a caveat.)
+  3. **Lazy hero cards** — `loading="lazy"` on og-card + inline imgs (native, so
+     offline-safe; PDF renders all in place). True client-side AJAX is impossible
+     for a file:// doc, so lazy-load is the offline-correct interpretation.
+  4. **Encrypted creds + save checkbox** — `gui/google_auth.{hpp,cpp}` centralizes
+     client id/secret in the keychain (migrated off plaintext QSettings) + a
+     `parseClientJson`. iCloud and Google dialogs prefill from the keychain and
+     have a "Save credentials (encrypted)" checkbox; `GoogleContacts::setClient`
+     lets a run use unsaved creds. iCloud Apple ID + app pw now stored encrypted.
+  5. **Google client JSON import** — "Import client JSON…" button parses the
+     downloaded `client_secret_*.json` (installed/web). Docs + Help updated.
+  6. **Google Drive connector** — `gui/google_drive.{hpp,cpp}`: OAuth PKCE
+     (`drive.file` scope), refresh token persisted in keychain (always, so uploads
+     survive restart); synchronous recursive uploader (`drive::uploadDirectory`,
+     own QNAM + QEventLoop per request, runs on a QtConcurrent worker) creates the
+     named folder under root and recreates the subfolder tree. GUI: "Connect
+     Google Drive…", folder-name field, "Upload export to Drive when finished"
+     (persisted `ui/uploadDrive`,`ui/driveFolder`); fires in `exportFinished` via
+     `maybeUploadToDrive`.
+  Version bumped to 0.3.0. NEXT: PR → CI green → merge → tag v0.3.0 → brew/choco.
+- Released **v0.2.8** (brew/choco at v0.2.8; six installers): **true Open Graph
   rich link previews**. Design: the core renderer stays network-free; it exposes
   an optional resolver hook `imsg::set_link_preview_resolver(LinkPreviewFn)`
   (exporters.hpp) that `media_embeds_html` calls for each non-embeddable URL — a

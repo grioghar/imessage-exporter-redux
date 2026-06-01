@@ -72,6 +72,47 @@ std::string html_escape(const std::string& s) {
     return out;
 }
 
+// MIME family of a media file from its extension, or "" when unknown. The
+// Messages DB's attachment.mime_type column is frequently empty, so the
+// renderers fall back to this to decide whether to inline a picture/movie.
+std::string mime_from_ext(const std::string& path) {
+    const std::size_t dot = path.find_last_of('.');
+    if (dot == std::string::npos) return "";
+    std::string ext = path.substr(dot);
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".gif") return "image/gif";
+    if (ext == ".heic" || ext == ".heif") return "image/heic";
+    if (ext == ".webp") return "image/webp";
+    if (ext == ".bmp") return "image/bmp";
+    if (ext == ".tif" || ext == ".tiff") return "image/tiff";
+    if (ext == ".mp4" || ext == ".m4v") return "video/mp4";
+    if (ext == ".mov") return "video/quicktime";
+    if (ext == ".3gp") return "video/3gpp";
+    if (ext == ".m4a") return "audio/mp4";
+    if (ext == ".mp3") return "audio/mpeg";
+    if (ext == ".aac") return "audio/aac";
+    if (ext == ".wav") return "audio/wav";
+    if (ext == ".caf") return "audio/x-caf";
+    if (ext == ".amr") return "audio/amr";
+    return "";
+}
+
+// The attachment's declared MIME, or a guess from the file/transfer name so
+// pictures and movies still render inline when the DB omitted the type.
+std::string effective_mime(const Attachment& a) {
+    if (!a.mime_type.empty()) return a.mime_type;
+    std::string m = mime_from_ext(a.filename);
+    if (m.empty()) m = mime_from_ext(a.transfer_name);
+    if (m.empty()) m = mime_from_ext(a.copied_path);
+    return m;
+}
+
+bool is_image_mime(const std::string& mime) { return mime.compare(0, 6, "image/") == 0; }
+bool is_video_mime(const std::string& mime) { return mime.compare(0, 6, "video/") == 0; }
+bool is_audio_mime(const std::string& mime) { return mime.compare(0, 6, "audio/") == 0; }
+
 // Escapes the characters most likely to break inline Markdown.
 std::string md_escape(const std::string& s) {
     std::string out;
@@ -185,12 +226,19 @@ std::string render_markdown(const Chat& chat) {
         os << "**" << md_escape(m.sender) << "** — " << format_when(m) << "  \n";
         if (m.has_text()) os << md_escape(m.text) << "\n";
         for (const Attachment& a : m.attachments) {
-            os << "- \xF0\x9F\x93\x8E " << md_escape(a.display_name());
-            if (!a.data_uri.empty())
-                os << " (embedded)";
+            const std::string name = md_escape(a.display_name());
+            // Markdown viewers render ![](path) inline, so pictures show as a
+            // preview; everything else becomes a link to the copied file.
+            const std::string ref =
+                !a.copied_path.empty() ? a.copied_path : a.data_uri;
+            const std::string mime = effective_mime(a);
+            if (!ref.empty() && is_image_mime(mime))
+                os << "![" << name << "](" << ref << ")\n";
             else if (!a.copied_path.empty())
-                os << " (`" << a.copied_path << "`)";
-            os << "\n";
+                os << "- \xF0\x9F\x93\x8E [" << name << "](" << a.copied_path << ")\n";
+            else
+                os << "- \xF0\x9F\x93\x8E " << name
+                   << (a.data_uri.empty() ? "" : " (embedded)") << "\n";
         }
         os << "\n";
     }
@@ -255,16 +303,6 @@ std::string render_json(const Chat& chat) {
 }
 
 namespace {
-
-bool is_image_mime(const std::string& mime) {
-    return mime.compare(0, 6, "image/") == 0;
-}
-bool is_video_mime(const std::string& mime) {
-    return mime.compare(0, 6, "video/") == 0;
-}
-bool is_audio_mime(const std::string& mime) {
-    return mime.compare(0, 6, "audio/") == 0;
-}
 
 // --- URL detection / linkifying / provider embeds --------------------------
 
@@ -394,18 +432,23 @@ std::string html_conversation(const Chat& chat) {
             if (wrote) os << "<br>";
             const std::string name = html_escape(a.display_name());
             // Prefer an inlined data URI (--embed-attachments); else a copied
-            // file link; else just the name.
+            // file link; else just the name. Pictures/movies render inline (and
+            // link to the copied file); the MIME is guessed from the name when
+            // the DB didn't record it, so they don't degrade to bare links.
             const std::string src =
                 !a.data_uri.empty() ? a.data_uri : html_escape(a.copied_path);
+            const std::string mime = effective_mime(a);
             if (src.empty()) {
                 os << "<span class=\"attachment\">\xF0\x9F\x93\x8E " << name << "</span>";
-            } else if (is_image_mime(a.mime_type)) {
-                os << "<a href=\"" << src << "\"><img class=\"attachment\" src=\""
-                   << src << "\" alt=\"" << name << "\"></a>";
-            } else if (is_video_mime(a.mime_type)) {
-                os << "<video class=\"attachment\" controls src=\"" << src << "\"></video>";
-            } else if (is_audio_mime(a.mime_type)) {
-                os << "<audio controls src=\"" << src << "\"></audio>";
+            } else if (is_image_mime(mime)) {
+                os << "<a href=\"" << src << "\"><img class=\"attachment\" loading=\"lazy\" "
+                   << "src=\"" << src << "\" alt=\"" << name << "\"></a>";
+            } else if (is_video_mime(mime)) {
+                os << "<video class=\"attachment\" controls preload=\"none\" src=\"" << src
+                   << "\"><a href=\"" << src << "\">\xF0\x9F\x93\x8E " << name
+                   << "</a></video>";
+            } else if (is_audio_mime(mime)) {
+                os << "<audio controls preload=\"none\" src=\"" << src << "\"></audio>";
             } else {
                 os << "<a class=\"attachment\" href=\"" << src << "\" download=\"" << name
                    << "\">\xF0\x9F\x93\x8E " << name << "</a>";

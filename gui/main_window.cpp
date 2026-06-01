@@ -51,6 +51,7 @@
 #include "imsg/build_stamp.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
+#include "google_auth.hpp"
 #include "link_preview.hpp"
 #include "secret_store.hpp"
 
@@ -205,8 +206,22 @@ MainWindow::MainWindow()
 
     googleBtn_ = new QPushButton("Connect Google Contacts…");
     googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
-                           "saved contacts database (needs IMSG_GOOGLE_CLIENT_ID).");
+                           "saved contacts database (needs a Google OAuth client).");
     form->addRow("", googleBtn_);
+
+    // --- Google Drive upload ------------------------------------------------
+    driveBtn_ = new QPushButton;  // label set by updateDriveButton() below
+    driveBtn_->setToolTip("Authorize Google Drive once; the sign-in is saved so "
+                          "future exports can upload automatically.");
+    form->addRow("Google Drive:", driveBtn_);
+
+    auto* driveRow = new QHBoxLayout;
+    uploadDrive_ = new QCheckBox("Upload export to Drive when finished");
+    driveFolder_ = new QLineEdit;
+    driveFolder_->setPlaceholderText("Drive folder name (e.g. iMessage Export)");
+    driveRow->addWidget(uploadDrive_);
+    driveRow->addWidget(driveFolder_);
+    form->addRow("", driveRow);
 
     auto* peopleRow = new QHBoxLayout;
     peopleBtn_ = new QPushButton("Select people…");
@@ -353,6 +368,28 @@ MainWindow::MainWindow()
         QMessageBox::warning(this, "Google Contacts", e);
     });
     connect(googleBtn_, &QPushButton::clicked, this, &MainWindow::connectGoogle);
+
+    drive_ = new GoogleDrive(this);
+    driveBtn_->setText(GoogleDrive::isConnected() ? "Reconnect Google Drive…"
+                                                  : "Connect Google Drive…");
+    connect(drive_, &GoogleDrive::status, this,
+            [this](const QString& m) { status_->setText(m); });
+    connect(drive_, &GoogleDrive::connected, this, [this] {
+        driveBtn_->setText("Reconnect Google Drive…");
+        uploadDrive_->setChecked(true);
+        status_->setText("Google Drive connected. Exports can now upload automatically.");
+        QMessageBox::information(this, "Google Drive",
+                                 "Google Drive is connected. Tick \"Upload export to "
+                                 "Drive when finished\" to push exports to your chosen "
+                                 "folder.");
+    });
+    connect(drive_, &GoogleDrive::failed, this, [this](const QString& e) {
+        status_->setText("Google Drive connection failed.");
+        QMessageBox::warning(this, "Google Drive", e);
+    });
+    connect(driveBtn_, &QPushButton::clicked, this, &MainWindow::connectDrive);
+    connect(&driveWatcher_, &QFutureWatcher<drive::UploadResult>::finished, this,
+            &MainWindow::driveUploadFinished);
 
     onSourceChanged();
     onContactsChanged();
@@ -533,6 +570,11 @@ void MainWindow::startExportResuming(bool resume) {
                                          : QDir::tempPath() + "/imsg-pdf-html";
         QDir().mkpath(pdfHtmlDir_);
         out_dir = pdfHtmlDir_.toStdString();
+        // QTextDocument renders <img>/hero cards in place (no lazy/JS), but it
+        // needs the picture bytes: make sure attachments are copied next to the
+        // intermediate HTML so the PDF embeds them (resolved via the base URL set
+        // in exportFinished). Embedding, if the user chose it, also works.
+        if (!opts.embed_attachments) opts.copy_attachments = true;
     }
 
     imsg::LogLevel lvl;
@@ -687,6 +729,10 @@ void MainWindow::exportFinished() {
             QFile f(fi.absoluteFilePath());
             if (!f.open(QIODevice::ReadOnly)) continue;
             QTextDocument doc;
+            // Base URL so relative copied-attachment paths (e.g. "Chat/photo.jpg")
+            // resolve to the files alongside the intermediate HTML, letting the
+            // pictures embed into the PDF.
+            doc.setBaseUrl(QUrl::fromLocalFile(QDir(pdfHtmlDir_).absolutePath() + "/"));
             doc.setHtml(QString::fromUtf8(f.readAll()));
             f.close();
             QPdfWriter writer(QDir(pdfRealOut_).filePath(fi.completeBaseName() + ".pdf"));
@@ -697,6 +743,7 @@ void MainWindow::exportFinished() {
         lastOutputDir_ = pdfRealOut_;
         status_->setText(QString("Exported %1 PDF(s).").arg(made));
         openBtn_->setEnabled(true);
+        maybeUploadToDrive(pdfRealOut_);
         return;
     }
 
@@ -706,6 +753,7 @@ void MainWindow::exportFinished() {
     msg += ".";
     status_->setText(msg);
     openBtn_->setEnabled(true);
+    maybeUploadToDrive(lastOutputDir_);
 }
 
 void MainWindow::openOutputDir() {
@@ -729,6 +777,8 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
     s.setValue("ui/richPreviews", richPreviews_->isChecked());
+    s.setValue("ui/uploadDrive", uploadDrive_->isChecked());
+    s.setValue("ui/driveFolder", driveFolder_->text());
     s.setValue("ui/contacts", contacts_->currentIndex());
     s.setValue("ui/contactsPath", contactsPath_->text());
     s.setValue("ui/logLevel", logLevel_->currentText());
@@ -755,6 +805,8 @@ void MainWindow::loadSettings() {
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
     richPreviews_->setChecked(s.value("ui/richPreviews", false).toBool());
+    uploadDrive_->setChecked(s.value("ui/uploadDrive", false).toBool());
+    driveFolder_->setText(s.value("ui/driveFolder").toString());
     contacts_->setCurrentIndex(s.value("ui/contacts", 0).toInt());
     contactsPath_->setText(s.value("ui/contactsPath").toString());
     logLevel_->setCurrentText(s.value("ui/logLevel", "info").toString());
@@ -945,13 +997,17 @@ void MainWindow::importICloudContacts() {
     info->setWordWrap(true);
     form->addRow(info);
 
-    auto* idField = new QLineEdit(&dlg);
+    auto* idField = new QLineEdit(secret::retrieve("icloud_apple_id"), &dlg);
     idField->setPlaceholderText("you@icloud.com");
-    auto* pwField = new QLineEdit(&dlg);
+    auto* pwField = new QLineEdit(secret::retrieve("icloud_app_password"), &dlg);
     pwField->setEchoMode(QLineEdit::Password);
     pwField->setPlaceholderText("xxxx-xxxx-xxxx-xxxx");
     form->addRow("Apple ID:", idField);
     form->addRow("App password:", pwField);
+
+    auto* saveCreds = new QCheckBox("Save credentials (encrypted in the OS keychain)", &dlg);
+    saveCreds->setChecked(!idField->text().isEmpty());
+    form->addRow("", saveCreds);
 
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
@@ -964,6 +1020,15 @@ void MainWindow::importICloudContacts() {
     const QString appleId = idField->text().trimmed();
     const QString appPw = pwField->text().trimmed();
     if (appleId.isEmpty() || appPw.isEmpty()) return;
+
+    // Persist (encrypted) only when asked; otherwise make sure nothing lingers.
+    if (saveCreds->isChecked()) {
+        secret::store("icloud_apple_id", appleId);
+        secret::store("icloud_app_password", appPw);
+    } else {
+        secret::remove("icloud_apple_id");
+        secret::remove("icloud_app_password");
+    }
 
     icloudBtn_->setEnabled(false);
     status_->setText("Connecting to iCloud…");
@@ -1052,64 +1117,139 @@ void MainWindow::showGoogleSetup() {
         "<li><b>Audience:</b> User type <b>External</b>; keep <b>Testing</b>; under "
         "<b>Test users</b> add the Google account you'll export.</li>"
         "<li><b>Data access:</b> add the scope "
-        "<code>.../auth/contacts.readonly</code>.</li>"
+        "<code>.../auth/contacts.readonly</code> (and, to upload exports to "
+        "Drive, also <code>.../auth/drive.file</code>).</li>"
         "</ul></li>"
         "<li><b>Clients → Create client</b>, Application type <b>Desktop app</b>.</li>"
-        "<li>Copy the <b>Client ID</b> + <b>Client secret</b> into the Connect "
-        "dialog.</li>"
+        "<li><b>Download JSON</b> for the client, then use <b>Import client JSON…</b> "
+        "in the Connect dialog (or paste the <b>Client ID</b> + <b>Client secret</b>). "
+        "Tick <b>Save credentials</b> to keep them encrypted in your OS keychain.</li>"
         "</ol>"
         "<p><b>Note:</b> <code>contacts.readonly</code> is a sensitive scope, so the "
         "app stays in <b>Testing</b> (no Google verification needed). Google then "
         "expires the token after <b>7 days</b> — harmless here, since each "
         "\"Connect\" re-authorizes; just sign in again if it's been a week.</p>"
-        "<p>The secret + refresh token are stored in your OS keychain; only "
-        "read-only contacts are accessed. Full guide: "
+        "<p>Credentials and tokens are stored <b>encrypted in your OS keychain</b>. "
+        "<b>Google Drive:</b> once the <code>drive.file</code> scope is added, click "
+        "<b>Connect Google Drive…</b>; the authorization is saved so future exports "
+        "can upload to your chosen folder automatically (the app can only touch the "
+        "files it creates). Full guide: "
         "<a href=\"https://github.com/grioghar/imessage-exporter-redux/blob/main/"
         "docs/GOOGLE.md\">docs/GOOGLE.md</a>.</p>");
 }
 
-void MainWindow::connectGoogle() {
+bool MainWindow::promptForGoogleClient(QString& id, QString& secret) {
     QDialog dlg(this);
-    dlg.setWindowTitle("Connect Google Contacts");
+    dlg.setWindowTitle("Google OAuth client");
     auto* form = new QFormLayout(&dlg);
     auto* info = new QLabel(
-        "Sign in to Google to download your contacts. This needs a Google Cloud "
-        "OAuth <b>Desktop app</b> client for the People API — see <b>Help → Google "
-        "Contacts setup…</b> (or the \"Setup help\" button below).",
+        "This needs a Google Cloud OAuth <b>Desktop app</b> client. Enter the "
+        "Client ID/secret, or <b>Import client JSON</b> (the file Google Cloud "
+        "Console gives you) — see <b>Help → Google Contacts setup…</b>.",
         &dlg);
     info->setTextFormat(Qt::RichText);
     info->setWordWrap(true);
     form->addRow(info);
 
-    auto* idField = new QLineEdit(QSettings().value("google/clientId").toString(), &dlg);
+    auto* idField = new QLineEdit(googleauth::clientId(), &dlg);
     idField->setPlaceholderText("xxxxxxxx.apps.googleusercontent.com");
-    auto* secretField = new QLineEdit(secret::retrieve("google_client_secret"), &dlg);
+    auto* secretField = new QLineEdit(googleauth::clientSecret(), &dlg);
     secretField->setEchoMode(QLineEdit::Password);
     secretField->setPlaceholderText("client secret");
     form->addRow("Client ID:", idField);
     form->addRow("Client secret:", secretField);
 
+    // Load the credentials straight from the OAuth client JSON Google hands out.
+    auto* importBtn = new QPushButton("Import client JSON…", &dlg);
+    connect(importBtn, &QPushButton::clicked, &dlg, [this, &dlg, idField, secretField] {
+        const QString path = QFileDialog::getOpenFileName(
+            &dlg, "Select Google OAuth client JSON", QString(), "JSON (*.json)");
+        if (path.isEmpty()) return;
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, "Import client JSON", "Could not read that file.");
+            return;
+        }
+        QString jid, jsec, err;
+        if (!googleauth::parseClientJson(f.readAll(), jid, jsec, err)) {
+            QMessageBox::warning(this, "Import client JSON", err);
+            return;
+        }
+        idField->setText(jid);
+        secretField->setText(jsec);
+    });
+    form->addRow("", importBtn);
+
+    auto* saveCreds = new QCheckBox("Save credentials (encrypted in the OS keychain)", &dlg);
+    saveCreds->setChecked(true);
+    form->addRow("", saveCreds);
+
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    buttons->button(QDialogButtonBox::Ok)->setText("Connect");
+    buttons->button(QDialogButtonBox::Ok)->setText("Continue");
     QPushButton* setupBtn = buttons->addButton("Setup help", QDialogButtonBox::HelpRole);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     connect(setupBtn, &QPushButton::clicked, this, &MainWindow::showGoogleSetup);
     form->addRow(buttons);
 
-    if (dlg.exec() != QDialog::Accepted) return;
-    const QString id = idField->text().trimmed();
-    const QString sec = secretField->text().trimmed();
+    if (dlg.exec() != QDialog::Accepted) return false;
+    id = idField->text().trimmed();
+    secret = secretField->text().trimmed();
     if (id.isEmpty()) {
-        QMessageBox::warning(this, "Google Contacts",
-                             "A Client ID is required (see Setup help).");
-        return;
+        QMessageBox::warning(this, "Google", "A Client ID is required (see Setup help).");
+        return false;
     }
-    QSettings().setValue("google/clientId", id);
-    if (!sec.isEmpty()) secret::store("google_client_secret", sec);
+    // Persist (encrypted) only if asked; either way the values are returned for
+    // this run.
+    if (saveCreds->isChecked())
+        googleauth::storeClient(id, secret);
+    else
+        googleauth::clearClient();
+    return true;
+}
+
+void MainWindow::connectGoogle() {
+    QString id, sec;
+    if (!promptForGoogleClient(id, sec)) return;
+    google_->setClient(id, sec);
     status_->setText("Connecting to Google…");
     google_->connectAndDownload();
+}
+
+void MainWindow::connectDrive() {
+    if (!googleauth::configured()) {  // need an OAuth client first
+        QString id, sec;
+        if (!promptForGoogleClient(id, sec)) return;
+        drive_->setClient(id, sec);
+    }
+    status_->setText("Connecting to Google Drive…");
+    drive_->connectInteractive();
+}
+
+void MainWindow::maybeUploadToDrive(const QString& dir) {
+    if (!uploadDrive_->isChecked()) return;
+    if (!GoogleDrive::isConnected()) {
+        QMessageBox::information(
+            this, "Google Drive",
+            "The export is done, but Google Drive isn't connected, so nothing was "
+            "uploaded. Click \"Connect Google Drive…\" and export again to upload.");
+        return;
+    }
+    const QString folder = driveFolder_->text();
+    status_->setText("Uploading the export to Google Drive…");
+    driveWatcher_.setFuture(QtConcurrent::run(
+        [dir, folder] { return drive::uploadDirectory(dir, folder); }));
+}
+
+void MainWindow::driveUploadFinished() {
+    const drive::UploadResult r = driveWatcher_.result();
+    if (r.ok) {
+        status_->setText(QString("Uploaded %1 file(s) to Google Drive.").arg(r.files));
+    } else {
+        status_->setText("Google Drive upload failed.");
+        QMessageBox::warning(this, "Google Drive upload", r.error);
+    }
 }
 
 void MainWindow::runUpdateCheck(bool manual) {
