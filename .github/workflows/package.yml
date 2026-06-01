@@ -36,6 +36,7 @@ jobs:
           done
           iconutil -c icns icon.iconset -o AppIcon.icns
           APP="build/iMessage Exporter.app"
+          mkdir -p "$APP/Contents/Resources"
           cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" \
             "$APP/Contents/Info.plist" \
