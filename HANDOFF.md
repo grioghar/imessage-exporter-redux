@@ -6,6 +6,36 @@ Keep this file CURRENT: update the "Status" and "In flight / next" sections at
 the end of every working session. `CLAUDE.md` is the deeper architecture guide;
 this file is the running state + how-to-continue.
 
+## ⏩ LIVE HANDOFF (read me first)
+
+**Context handed off to Ollama at token-low. Current live state:**
+- **Released:** through **v0.3.0** (six installers each; Homebrew/Chocolatey at
+  v0.3.0). v0.3.0 added inline pictures/movies, Google Drive upload, encrypted
+  credential saving + Google client-JSON import, the reliable chat.db Browse
+  dialog, and the macOS "Fix Full Disk Access…" helper.
+- **In flight:** **v0.4.0** on branch `feat/0.4.0-tabbed-ui` → **PR #33** (open).
+  Adds the tabbed UI (Source/Filters/Output/Run) + Preferences pane (⌘,) +
+  Pause/Stop export, plus fixes: macOS **HEIC→JPEG transcode** (`sips`) so
+  pictures render, copy-attachments default-on/auto for HTML+PDF, link-only
+  messages show only the card (no bare URL above it), always-editable date
+  pickers, and a `date filter: …` log line. Version already bumped to 0.4.0.
+- **Finish the v0.4.0 release (immediate next steps):**
+  1. `gh pr checks 33` → when green, `gh pr merge 33 --rebase`. If red: open the
+     failing job, fix on the branch, commit, push, re-check until green.
+  2. `git checkout main && git pull`; `git tag -a v0.4.0 -m "v0.4.0 — tabbed UI,
+     Preferences, Pause/Stop, picture+date fixes"`; `git push origin v0.4.0`
+     (triggers `.github/workflows/package.yml` → six installers + the release).
+  3. After the package run succeeds: download + `sha256sum` the source tarball
+     (`archive/refs/tags/v0.4.0.tar.gz`), `iMessage-Exporter-macOS.dmg`,
+     `iMessage-Exporter-Setup.exe`; branch `chore/brew-choco-0.4.0`; update
+     `packaging/homebrew/imessage-exporter.rb` (url+sha256),
+     `imessage-exporter-app.rb` (version + dmg sha256),
+     `packaging/chocolatey/imessage-exporter.nuspec` (version) +
+     `tools/chocolateyinstall.ps1` (version + exe checksum64); PR → CI → merge.
+  4. Refresh this block + append the session log below.
+- **Then stop and summarize** unless grio asked for more. Do **NOT** archive the
+  project.
+
 ## What this project is
 `grioghar/imessage-exporter-redux` — a C++17 tool that exports a macOS Messages
 database (`chat.db`) to TXT / JSON / HTML. One shared engine, many front-ends:
