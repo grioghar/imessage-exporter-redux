@@ -20,6 +20,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -33,7 +34,9 @@
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTabWidget>
 #include <QTextStream>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -89,9 +92,12 @@ MainWindow::MainWindow()
     QDir().mkpath(dataDir);
     logFilePath_ = QDir(dataDir).filePath("imessage-exporter.log");
 
-    auto* form = new QFormLayout;
+    // ============ Tabbed per-export workflow ============
+    tabs_ = new QTabWidget;
 
-    // --- Source -------------------------------------------------------------
+    // --- Source tab ---------------------------------------------------------
+    auto* sourcePage = new QWidget;
+    auto* srcForm = new QFormLayout(sourcePage);
     source_ = new QComboBox;
 #if defined(Q_OS_MACOS)
     // Auto-detecting ~/Library/Messages/chat.db only makes sense on a Mac.
@@ -99,7 +105,7 @@ MainWindow::MainWindow()
 #endif
     source_->addItem("Database file (chat.db / sms.db)…", SrcFile);
     source_->addItem("Device backup…", SrcBackup);
-    form->addRow("Source:", source_);
+    srcForm->addRow("Source:", source_);
 
     auto* dbRow = new QHBoxLayout;
     dbPath_ = new QLineEdit;
@@ -107,7 +113,7 @@ MainWindow::MainWindow()
     dbBrowse_ = new QPushButton("Browse…");
     dbRow->addWidget(dbPath_);
     dbRow->addWidget(dbBrowse_);
-    form->addRow("Database:", dbRow);
+    srcForm->addRow("Database:", dbRow);
 
     backup_ = new QComboBox;
     for (const imsg::BackupInfo& b : imsg::list_backups()) {
@@ -116,31 +122,18 @@ MainWindow::MainWindow()
         backup_->addItem(label, QString::fromStdString(b.path));
     }
     if (backup_->count() == 0) backup_->addItem("(no backups found)", QString());
-    form->addRow("Backup:", backup_);
+    srcForm->addRow("Backup:", backup_);
 
     copyDbBtn_ = new QPushButton("Copy Messages data to a local cache…");
     copyDbBtn_->setToolTip("Copy chat.db to a folder this app can always read, so "
                            "you don't need Full Disk Access on every run. (The copy "
                            "itself needs read access once.)");
-    form->addRow("", copyDbBtn_);
+    srcForm->addRow("", copyDbBtn_);
+    tabs_->addTab(sourcePage, "Source");
 
-    // --- Options ------------------------------------------------------------
-    format_ = new QComboBox;
-    format_->addItems({"txt", "md", "html", "json", "pdf"});
-    format_->setCurrentText("html");
-    form->addRow("Format:", format_);
-
-    auto* outRow = new QHBoxLayout;
-    outputDir_ = new QLineEdit;
-    outputDir_->setText(QDir::homePath() + "/iMessage Export");
-    auto* outBrowse = new QPushButton("Browse…");
-    outRow->addWidget(outputDir_);
-    outRow->addWidget(outBrowse);
-    form->addRow("Output folder:", outRow);
-
-    meLabel_ = new QLineEdit("Me");
-    form->addRow("Your name:", meLabel_);
-
+    // --- Filters tab --------------------------------------------------------
+    auto* filtersPage = new QWidget;
+    auto* filForm = new QFormLayout(filtersPage);
     auto* sinceRow = new QHBoxLayout;
     sinceOn_ = new QCheckBox("From");
     since_ = new QDateEdit(QDate::currentDate().addYears(-1));
@@ -158,9 +151,113 @@ MainWindow::MainWindow()
     sinceRow->addWidget(untilOn_);
     sinceRow->addWidget(until_);
     sinceRow->addStretch();
-    form->addRow("Date range:", sinceRow);
+    filForm->addRow("Date range:", sinceRow);
 
-    combined_ = new QCheckBox("Single combined file");
+    auto* peopleRow = new QHBoxLayout;
+    peopleBtn_ = new QPushButton("Select people…");
+    peopleBtn_->setToolTip("Export only conversations with specific people.");
+    peopleLabel_ = new QLabel("All conversations");
+    peopleLabel_->setStyleSheet("color:#6e6e73");
+    peopleRow->addWidget(peopleBtn_);
+    peopleRow->addWidget(peopleLabel_);
+    peopleRow->addStretch();
+    filForm->addRow("People:", peopleRow);
+    tabs_->addTab(filtersPage, "Filters");
+
+    // --- Output tab ---------------------------------------------------------
+    auto* outputPage = new QWidget;
+    auto* outForm = new QFormLayout(outputPage);
+    format_ = new QComboBox;
+    format_->addItems({"txt", "md", "html", "json", "pdf"});
+    format_->setCurrentText("html");
+    outForm->addRow("Format:", format_);
+
+    auto* outRow = new QHBoxLayout;
+    outputDir_ = new QLineEdit;
+    outputDir_->setText(QDir::homePath() + "/iMessage Export");
+    auto* outBrowse = new QPushButton("Browse…");
+    outRow->addWidget(outputDir_);
+    outRow->addWidget(outBrowse);
+    outForm->addRow("Output folder:", outRow);
+
+    meLabel_ = new QLineEdit("Me");
+    outForm->addRow("Your name:", meLabel_);
+
+    combined_ = new QCheckBox("Single combined file (instead of one per conversation)");
+    outForm->addRow("", combined_);
+    tabs_->addTab(outputPage, "Output");
+
+    // --- Run tab ------------------------------------------------------------
+    auto* runPage = new QWidget;
+    auto* runLayout = new QVBoxLayout(runPage);
+    exportBtn_ = new QPushButton("Export");
+    pauseBtn_ = new QPushButton("Pause");
+    pauseBtn_->setEnabled(false);
+    stopBtn_ = new QPushButton("Stop");
+    stopBtn_->setEnabled(false);
+    openBtn_ = new QPushButton("Open output folder");
+    openBtn_->setEnabled(false);
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addWidget(exportBtn_);
+    btnRow->addWidget(pauseBtn_);
+    btnRow->addWidget(stopBtn_);
+    btnRow->addWidget(openBtn_);
+    btnRow->addStretch();
+    runLayout->addLayout(btnRow);
+    status_ = new QLabel("Ready.");
+    runLayout->addWidget(status_);
+    logView_ = new QPlainTextEdit;
+    logView_->setReadOnly(true);
+    logView_->setMinimumHeight(220);
+    runLayout->addWidget(logView_);
+    runTabIndex_ = tabs_->addTab(runPage, "Run");
+
+    // ============ Preferences pane (persistent configuration) ============
+    // These controls hold state via QSettings (load/saveSettings) and are not
+    // part of the per-export tab flow.
+    prefsDialog_ = new QDialog(this);
+    prefsDialog_->setWindowTitle("Preferences");
+    auto* prefForm = new QFormLayout(prefsDialog_);
+
+    contacts_ = new QComboBox;
+    contacts_->addItem("None (show phone numbers / emails)");
+    contacts_->addItem("This Mac's Contacts");
+    contacts_->addItem("Contacts file (.abcddb / .vcf)…");
+    contacts_->addItem("From the selected backup");
+    contacts_->addItem("Saved contacts database (Google / imported)");
+    prefForm->addRow("Names:", contacts_);
+
+    auto* ctRow = new QHBoxLayout;
+    contactsPath_ = new QLineEdit;
+    contactsPath_->setPlaceholderText("Path to .abcddb or .vcf");
+    contactsBrowse_ = new QPushButton("Browse…");
+    ctRow->addWidget(contactsPath_);
+    ctRow->addWidget(contactsBrowse_);
+    prefForm->addRow("Contacts file:", ctRow);
+
+    icloudBtn_ = new QPushButton("Import iCloud Contacts…");
+    icloudBtn_->setToolTip("Fetch your iCloud contacts over CardDAV using an "
+                           "app-specific password.");
+    prefForm->addRow("", icloudBtn_);
+
+    googleBtn_ = new QPushButton("Connect Google Contacts…");
+    googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
+                           "saved contacts database (needs a Google OAuth client).");
+    prefForm->addRow("", googleBtn_);
+
+    driveBtn_ = new QPushButton;  // label set in the GoogleDrive wiring below
+    driveBtn_->setToolTip("Authorize Google Drive once; the sign-in is saved so "
+                          "future exports can upload automatically.");
+    prefForm->addRow("Google Drive:", driveBtn_);
+
+    auto* driveRow = new QHBoxLayout;
+    uploadDrive_ = new QCheckBox("Upload export to Drive when finished");
+    driveFolder_ = new QLineEdit;
+    driveFolder_->setPlaceholderText("Drive folder name (e.g. iMessage Export)");
+    driveRow->addWidget(uploadDrive_);
+    driveRow->addWidget(driveFolder_);
+    prefForm->addRow("", driveRow);
+
     copyAttachments_ = new QCheckBox("Copy attachment files");
     embedAttachments_ = new QCheckBox("Embed attachments (larger files)");
     embedAttachments_->setToolTip("Inline pictures, movies and files as base64 so "
@@ -174,86 +271,34 @@ MainWindow::MainWindow()
         "(hero image, title, description) over the network and embed it inline, "
         "like Messages shows. Slower and requires internet; without it, links "
         "still get a favicon + site card. YouTube/Spotify/Vimeo always embed.");
-    auto* flags = new QHBoxLayout;
-    flags->addWidget(combined_);
-    flags->addWidget(copyAttachments_);
-    flags->addWidget(embedAttachments_);
-    flags->addWidget(hiddenAttachDir_);
-    flags->addWidget(richPreviews_);
-    flags->addStretch();
-    form->addRow("", flags);
-
-    contacts_ = new QComboBox;
-    contacts_->addItem("None (show phone numbers / emails)");
-    contacts_->addItem("This Mac's Contacts");
-    contacts_->addItem("Contacts file (.abcddb / .vcf)…");
-    contacts_->addItem("From the selected backup");
-    contacts_->addItem("Saved contacts database (Google / imported)");
-    form->addRow("Names:", contacts_);
-
-    auto* ctRow = new QHBoxLayout;
-    contactsPath_ = new QLineEdit;
-    contactsPath_->setPlaceholderText("Path to .abcddb or .vcf");
-    contactsBrowse_ = new QPushButton("Browse…");
-    ctRow->addWidget(contactsPath_);
-    ctRow->addWidget(contactsBrowse_);
-    form->addRow("Contacts file:", ctRow);
-
-    icloudBtn_ = new QPushButton("Import iCloud Contacts…");
-    icloudBtn_->setToolTip("Fetch your iCloud contacts over CardDAV using an "
-                           "app-specific password.");
-    form->addRow("", icloudBtn_);
-
-    googleBtn_ = new QPushButton("Connect Google Contacts…");
-    googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
-                           "saved contacts database (needs a Google OAuth client).");
-    form->addRow("", googleBtn_);
-
-    // --- Google Drive upload ------------------------------------------------
-    driveBtn_ = new QPushButton;  // label set by updateDriveButton() below
-    driveBtn_->setToolTip("Authorize Google Drive once; the sign-in is saved so "
-                          "future exports can upload automatically.");
-    form->addRow("Google Drive:", driveBtn_);
-
-    auto* driveRow = new QHBoxLayout;
-    uploadDrive_ = new QCheckBox("Upload export to Drive when finished");
-    driveFolder_ = new QLineEdit;
-    driveFolder_->setPlaceholderText("Drive folder name (e.g. iMessage Export)");
-    driveRow->addWidget(uploadDrive_);
-    driveRow->addWidget(driveFolder_);
-    form->addRow("", driveRow);
-
-    auto* peopleRow = new QHBoxLayout;
-    peopleBtn_ = new QPushButton("Select people…");
-    peopleBtn_->setToolTip("Export only conversations with specific people.");
-    peopleLabel_ = new QLabel("All conversations");
-    peopleLabel_->setStyleSheet("color:#6e6e73");
-    peopleRow->addWidget(peopleBtn_);
-    peopleRow->addWidget(peopleLabel_);
-    peopleRow->addStretch();
-    form->addRow("People:", peopleRow);
+    auto* attCol = new QVBoxLayout;
+    attCol->addWidget(copyAttachments_);
+    attCol->addWidget(embedAttachments_);
+    attCol->addWidget(hiddenAttachDir_);
+    attCol->addWidget(richPreviews_);
+    prefForm->addRow("Attachments:", attCol);
 
     logLevel_ = new QComboBox;
     logLevel_->addItems({"error", "warn", "info", "debug"});
     logLevel_->setCurrentText("info");
-    form->addRow("Log level:", logLevel_);
+    prefForm->addRow("Log level:", logLevel_);
 
-    // --- Actions / output ---------------------------------------------------
-    exportBtn_ = new QPushButton("Export");
-    openBtn_ = new QPushButton("Open output folder");
-    openBtn_->setEnabled(false);
-    auto* btnRow = new QHBoxLayout;
-    btnRow->addWidget(exportBtn_);
-    btnRow->addWidget(openBtn_);
-    btnRow->addStretch();
+    auto* prefButtons = new QDialogButtonBox(QDialogButtonBox::Close, prefsDialog_);
+    connect(prefButtons, &QDialogButtonBox::rejected, prefsDialog_, [this] {
+        saveSettings();
+        prefsDialog_->hide();
+    });
+    prefForm->addRow(prefButtons);
 
-    status_ = new QLabel("Ready.");
-    logView_ = new QPlainTextEdit;
-    logView_->setReadOnly(true);
-    logView_->setMinimumHeight(160);
-
-    // --- Menu bar (Help) ----------------------------------------------------
+    // --- Menu bar (Help + Settings) -----------------------------------------
     auto* menuBar = new QMenuBar;
+    QMenu* settingsMenu = menuBar->addMenu("&Settings");
+    QAction* prefsAction = new QAction("Preferences…", this);
+    prefsAction->setShortcut(QKeySequence::Preferences);
+    prefsAction->setMenuRole(QAction::PreferencesRole);  // → app menu on macOS
+    connect(prefsAction, &QAction::triggered, this, &MainWindow::showPreferences);
+    settingsMenu->addAction(prefsAction);
+
     QMenu* helpMenu = menuBar->addMenu("&Help");
     helpMenu->addAction("How to get your data…", this, &MainWindow::showHowToGetData);
 #ifdef Q_OS_MACOS
@@ -282,11 +327,11 @@ MainWindow::MainWindow()
 
     auto* root = new QVBoxLayout(this);
     root->setMenuBar(menuBar);
-    root->addLayout(form);
-    root->addLayout(btnRow);
-    root->addWidget(status_);
-    root->addWidget(logView_);
+    root->addWidget(tabs_);
 
+    connect(exportBtn_, &QPushButton::clicked, this, &MainWindow::startExport);
+    connect(pauseBtn_, &QPushButton::clicked, this, &MainWindow::pauseExport);
+    connect(stopBtn_, &QPushButton::clicked, this, &MainWindow::stopExport);
     connect(source_, &QComboBox::currentIndexChanged, this, &MainWindow::onSourceChanged);
     connect(contacts_, &QComboBox::currentIndexChanged, this,
             &MainWindow::onContactsChanged);
@@ -300,7 +345,6 @@ MainWindow::MainWindow()
             [this] { sinceOn_->setChecked(true); });
     connect(until_, &QDateEdit::dateChanged, this,
             [this] { untilOn_->setChecked(true); });
-    connect(exportBtn_, &QPushButton::clicked, this, &MainWindow::startExport);
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
     connect(icloudBtn_, &QPushButton::clicked, this,
             &MainWindow::importICloudContacts);
@@ -560,7 +604,34 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
 
 void MainWindow::setBusy(bool busy) {
     exportBtn_->setEnabled(!busy);
+    pauseBtn_->setEnabled(busy);
+    stopBtn_->setEnabled(busy);
+    if (!busy) pauseBtn_->setText("Pause");
     status_->setText(busy ? "Exporting…" : "Ready.");
+}
+
+void MainWindow::showPreferences() {
+    prefsDialog_->show();
+    prefsDialog_->raise();
+    prefsDialog_->activateWindow();
+}
+
+void MainWindow::pauseExport() {
+    if (!jobRunning_) return;
+    const bool nowPaused = !paused_.load();
+    paused_.store(nowPaused);
+    pauseBtn_->setText(nowPaused ? "Resume" : "Pause");
+    status_->setText(nowPaused ? "Paused — will stop after the current conversation."
+                               : "Resuming…");
+}
+
+void MainWindow::stopExport() {
+    if (!jobRunning_) return;
+    stopRequested_.store(true);
+    paused_.store(false);  // unblock a paused worker so it can see the stop
+    pauseBtn_->setEnabled(false);
+    stopBtn_->setEnabled(false);
+    status_->setText("Stopping after the current conversation…");
 }
 
 void MainWindow::startExport() { startExportResuming(false); }
@@ -576,6 +647,7 @@ void MainWindow::startExportResuming(bool resume) {
     }
     resuming_ = resume;
     opts.skip_existing = resume;  // resume: don't redo finished conversation files
+    if (tabs_ && runTabIndex_ >= 0) tabs_->setCurrentIndex(runTabIndex_);  // show progress
 
     // PDF: write HTML to a temp dir now; convert to PDF in exportFinished().
     wantPdf_ = (format_->currentText() == "pdf");
@@ -633,6 +705,16 @@ void MainWindow::startExportResuming(bool resume) {
         QMetaObject::invokeMethod(
             this, [this, done, total] { onProgress(done, total); },
             Qt::QueuedConnection);
+    };
+
+    // Pause/Stop: the engine calls this between conversations on the worker
+    // thread. While paused we block here (so finished files are kept and the run
+    // resumes cleanly); returning true asks the engine to stop early.
+    stopRequested_.store(false);
+    paused_.store(false);
+    opts.should_stop = [this]() -> bool {
+        while (paused_.load() && !stopRequested_.load()) QThread::msleep(150);
+        return stopRequested_.load();
     };
 
     // Rich link previews: install a fetcher the HTML renderer calls per link.

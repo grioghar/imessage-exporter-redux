@@ -60,6 +60,12 @@ struct ExportOptions {
     // Called after each conversation with (processed, total) for progress / for
     // persisting a resume index. May be null.
     std::function<void(int processed, int total)> on_progress;
+
+    // Called before each conversation (on the calling thread); return true to
+    // stop the export early — conversations already written are kept and the run
+    // still reports success. May block internally to implement pause/resume. May
+    // be null (never stops). Used by the GUI's Stop/Pause buttons.
+    std::function<bool()> should_stop;
 };
 
 struct ExportSummary {

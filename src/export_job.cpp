@@ -274,6 +274,9 @@ ExportSummary export_database(const std::string& db_path,
             if (chat.message_count == 0) continue;
             if (!matches_participants(chat, opts.only_participants)) continue;
 
+            // Cooperative pause/stop from the front-end (blocks while paused).
+            if (opts.should_stop && opts.should_stop()) break;
+
             std::string slug = slugify(chat.title());
             if (slug.empty()) slug = "chat-" + std::to_string(chat.rowid);
 
