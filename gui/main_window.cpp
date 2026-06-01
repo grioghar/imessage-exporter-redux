@@ -134,32 +134,38 @@ MainWindow::MainWindow()
     // --- Filters tab --------------------------------------------------------
     auto* filtersPage = new QWidget;
     auto* filForm = new QFormLayout(filtersPage);
+    // The date fields themselves arm the filter — no separate checkboxes (which
+    // confused people). "From" left at its "(any start)" sentinel = no lower
+    // bound; "To" left at today = through now. Picking a real date turns that
+    // bound on. The live summary below always says exactly what will be exported.
     auto* sinceRow = new QHBoxLayout;
-    sinceOn_ = new QCheckBox("From");
-    sinceOn_->setToolTip("Only export messages on/after this date. Ticks on "
-                         "automatically when you pick a date.");
-    since_ = new QDateEdit(QDate::currentDate().addYears(-1));
+    since_ = new QDateEdit;
     since_->setDisplayFormat("yyyy-MM-dd");
     since_->setCalendarPopup(true);
-    untilOn_ = new QCheckBox("To");
-    untilOn_->setToolTip("Only export messages on/before this date. Leave "
-                         "unchecked to export from the 'From' date through today.");
-    until_ = new QDateEdit(QDate::currentDate());
+    since_->setMinimumDate(QDate(2001, 1, 1));         // Apple-time epoch start
+    since_->setMaximumDate(QDate::currentDate());
+    since_->setSpecialValueText("(any start)");        // shown at minimumDate
+    since_->setDate(since_->minimumDate());            // default: no lower bound
+    since_->setToolTip("Only export messages on/after this date. Leave it at "
+                       "\"(any start)\" for no start limit.");
+    until_ = new QDateEdit;
     until_->setDisplayFormat("yyyy-MM-dd");
     until_->setCalendarPopup(true);
-    sinceRow->addWidget(sinceOn_);
+    until_->setMinimumDate(QDate(2001, 1, 1));
+    until_->setMaximumDate(QDate::currentDate());
+    until_->setDate(until_->maximumDate());            // default: today = through now
+    until_->setToolTip("Only export messages on/before this date. Leave it at "
+                       "today for no end limit.");
+    sinceRow->addWidget(new QLabel("From:"));
     sinceRow->addWidget(since_);
-    sinceRow->addWidget(untilOn_);
+    sinceRow->addWidget(new QLabel("To:"));
     sinceRow->addWidget(until_);
     sinceRow->addStretch();
     filForm->addRow("Date range:", sinceRow);
-    auto* dateHint = new QLabel(
-        "Tip: tick <b>From</b> and/or <b>To</b> (picking a date ticks it for you). "
-        "The export log shows the active range.");
-    dateHint->setTextFormat(Qt::RichText);
-    dateHint->setStyleSheet("color:#6e6e73");
-    dateHint->setWordWrap(true);
-    filForm->addRow("", dateHint);
+    dateSummary_ = new QLabel;
+    dateSummary_->setTextFormat(Qt::RichText);
+    dateSummary_->setWordWrap(true);
+    filForm->addRow("", dateSummary_);
 
     auto* peopleRow = new QHBoxLayout;
     peopleBtn_ = new QPushButton("Select people…");
@@ -350,12 +356,9 @@ MainWindow::MainWindow()
     connect(dbBrowse_, &QPushButton::clicked, this, &MainWindow::browseDatabase);
     connect(outBrowse, &QPushButton::clicked, this, &MainWindow::browseOutput);
     connect(contactsBrowse_, &QPushButton::clicked, this, &MainWindow::browseContacts);
-    // The date edits stay enabled; picking a date turns its bound on so users
-    // don't have to find the checkbox first (a long-standing point of confusion).
-    connect(since_, &QDateEdit::dateChanged, this,
-            [this] { sinceOn_->setChecked(true); });
-    connect(until_, &QDateEdit::dateChanged, this,
-            [this] { untilOn_->setChecked(true); });
+    // Picking a date arms that bound; the summary reflects it live.
+    connect(since_, &QDateEdit::dateChanged, this, &MainWindow::updateDateSummary);
+    connect(until_, &QDateEdit::dateChanged, this, &MainWindow::updateDateSummary);
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
     connect(icloudBtn_, &QPushButton::clicked, this,
             &MainWindow::importICloudContacts);
@@ -453,6 +456,7 @@ MainWindow::MainWindow()
     onSourceChanged();
     onContactsChanged();
     loadSettings();
+    updateDateSummary();  // ensure the summary shows on first run too
     QTimer::singleShot(0, this, [this] { maybeResumePrevious(); });
 }
 
@@ -528,10 +532,12 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.embed_attachments = embedAttachments_->isChecked();
     opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
 
-    if (sinceOn_->isChecked() &&
+    // A start date later than the "(any start)" sentinel arms the lower bound;
+    // an end date earlier than today arms the upper bound.
+    if (since_->date() > since_->minimumDate() &&
         imsg::parse_date(since_->date().toString("yyyy-MM-dd").toStdString(), opts.since))
         opts.has_since = true;
-    if (untilOn_->isChecked() &&
+    if (until_->date() < QDate::currentDate() &&
         imsg::parse_date(until_->date().toString("yyyy-MM-dd").toStdString(),
                          opts.until, /*end_of_day=*/true))
         opts.has_until = true;
@@ -625,6 +631,28 @@ void MainWindow::showPreferences() {
     prefsDialog_->show();
     prefsDialog_->raise();
     prefsDialog_->activateWindow();
+}
+
+void MainWindow::updateDateSummary() {
+    if (!dateSummary_) return;
+    const bool hasSince = since_->date() > since_->minimumDate();
+    const bool hasUntil = until_->date() < QDate::currentDate();
+    const QString from = since_->date().toString("yyyy-MM-dd");
+    const QString to = until_->date().toString("yyyy-MM-dd");
+    QString text;
+    bool active = true;
+    if (!hasSince && !hasUntil) {
+        text = "Exporting <b>all messages</b> (no date limit).";
+        active = false;
+    } else if (hasSince && !hasUntil) {
+        text = "Exporting messages <b>from " + from + " through today</b>.";
+    } else if (!hasSince && hasUntil) {
+        text = "Exporting messages <b>up to " + to + "</b>.";
+    } else {
+        text = "Exporting messages <b>from " + from + " to " + to + "</b>.";
+    }
+    dateSummary_->setText(text);
+    dateSummary_->setStyleSheet(active ? "color:#0b7d2b" : "color:#6e6e73");
 }
 
 void MainWindow::pauseExport() {
@@ -875,10 +903,10 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/format", format_->currentText());
     s.setValue("ui/output", outputDir_->text());
     s.setValue("ui/me", meLabel_->text());
-    s.setValue("ui/sinceOn", sinceOn_->isChecked());
-    s.setValue("ui/since", since_->date().toString("yyyy-MM-dd"));
-    s.setValue("ui/untilOn", untilOn_->isChecked());
-    s.setValue("ui/until", until_->date().toString("yyyy-MM-dd"));
+    // New keys (the old ui/since/ui/until used a 1-year-ago default that would
+    // now read as an active filter; ignoring them resets everyone to "(any)").
+    s.setValue("ui/sinceDate", since_->date().toString("yyyy-MM-dd"));
+    s.setValue("ui/untilDate", until_->date().toString("yyyy-MM-dd"));
     s.setValue("ui/combined", combined_->isChecked());
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
@@ -900,13 +928,11 @@ void MainWindow::loadSettings() {
     format_->setCurrentText(s.value("ui/format", "html").toString());
     outputDir_->setText(s.value("ui/output", outputDir_->text()).toString());
     meLabel_->setText(s.value("ui/me", "Me").toString());
-    sinceOn_->setChecked(s.value("ui/sinceOn", false).toBool());
-    untilOn_->setChecked(s.value("ui/untilOn", false).toBool());
-    // Block dateChanged so restoring a saved date doesn't auto-tick the filter.
-    const QDate sd = QDate::fromString(s.value("ui/since").toString(), "yyyy-MM-dd");
-    if (sd.isValid()) { since_->blockSignals(true); since_->setDate(sd); since_->blockSignals(false); }
-    const QDate ud = QDate::fromString(s.value("ui/until").toString(), "yyyy-MM-dd");
-    if (ud.isValid()) { until_->blockSignals(true); until_->setDate(ud); until_->blockSignals(false); }
+    const QDate sd = QDate::fromString(s.value("ui/sinceDate").toString(), "yyyy-MM-dd");
+    if (sd.isValid()) since_->setDate(sd);
+    const QDate ud = QDate::fromString(s.value("ui/untilDate").toString(), "yyyy-MM-dd");
+    if (ud.isValid()) until_->setDate(ud);
+    updateDateSummary();
     combined_->setChecked(s.value("ui/combined", false).toBool());
     copyAttachments_->setChecked(s.value("ui/copy", true).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());

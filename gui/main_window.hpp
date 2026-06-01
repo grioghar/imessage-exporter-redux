@@ -59,6 +59,7 @@ class MainWindow : public QWidget {
     void driveUploadFinished();
     void showFullDiskAccessHelp();  // macOS: grant FDA / fix quarantine
     void showPreferences();         // open the Preferences pane (⌘,)
+    void updateDateSummary();       // refresh the live date-range summary line
     void pauseExport();             // toggle pause/resume of a running export
     void stopExport();              // cancel a running export (keep finished files)
 
@@ -103,10 +104,9 @@ class MainWindow : public QWidget {
     QComboBox* format_ = nullptr;
     QLineEdit* outputDir_ = nullptr;
     QLineEdit* meLabel_ = nullptr;
-    QCheckBox* sinceOn_ = nullptr;
-    QDateEdit* since_ = nullptr;
-    QCheckBox* untilOn_ = nullptr;
-    QDateEdit* until_ = nullptr;
+    QDateEdit* since_ = nullptr;   // at minimumDate ("any start") = no lower bound
+    QDateEdit* until_ = nullptr;   // at today = no upper bound (through now)
+    QLabel* dateSummary_ = nullptr;  // live "what will be exported" line
     QCheckBox* combined_ = nullptr;
     QCheckBox* copyAttachments_ = nullptr;
     QCheckBox* embedAttachments_ = nullptr;
