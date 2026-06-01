@@ -10,10 +10,8 @@ $packageArgs = @{
   silentArgs     = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
   validExitCodes = @(0)
   softwareName   = 'iMessage Exporter*'
-  # Required for the Chocolatey community feed — set to the released
-  # Setup.exe SHA-256 (Get-FileHash) at publish time:
-  # checksum64     = '<SHA256 OF iMessage-Exporter-Setup.exe>'
-  # checksumType64 = 'sha256'
+  checksum64     = 'a427488911403504dc9b02a1400fc66789ea7c43d4a71df599c3ed516815c00b'
+  checksumType64 = 'sha256'
 }
 
 Install-ChocolateyPackage @packageArgs

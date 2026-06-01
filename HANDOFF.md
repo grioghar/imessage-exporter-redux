@@ -76,20 +76,24 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Released: **v0.1.0** (macOS dmg, Windows installer, Linux AppImage attached).
-- `main`: has features + backup + logging + Docker + Qt GUI + Help/iCloud + app
-  icon + Docker Hub publish. Version strings on `main` still say 0.1.0 except
-  CMake (0.2.0) — fixed by PR #11.
-- **Open PRs:**
-  - #11 `feat/10-update-pkg`: auto-update, hide Windows console, deb/rpm/snap
-    installers, `version.hpp`/0.2.0. CI green; package run validated
-    deb/rpm/snap (snap was the slowest). NOT merged.
-  - (this) `feat/11-brew-choco`: Homebrew + Chocolatey packaging + this file.
+- Released: **v0.2.0** — six installers attached (macOS `.dmg`, Windows
+  `Setup.exe`, Linux `.AppImage` + `.deb` + `.rpm` + `.snap`). v0.1.0 also exists.
+- `main`: everything merged — features, backup, logging, Docker (+Hub publish),
+  Qt GUI with Help menu / iCloud CardDAV import / app icon / **auto-update** /
+  hidden Windows console, all six installer pipelines, Homebrew + Chocolatey
+  defs, this file. Version centralized in `include/imsg/version.hpp` = 0.2.0.
+- Homebrew/Choco real checksums for v0.2.0 are filled in (this session):
+  tarball `6ce6afb4…`, dmg `e973937d…`, Setup.exe `a4274889…`.
+- **Open PRs:** the checksum-fill PR (this) only.
 
 ## In flight / next
-- Merge PR #11, then this PR.
-- Cut **v0.2.0** (tag → `package.yml` publishes all installers). After release,
-  fill the real `sha256` in the Homebrew formula/cask and verify the Choco/Brew
-  install against the published assets.
+- Publish to the actual registries (one-time, needs accounts): create
+  `grioghar/homebrew-tap` and copy the two `.rb` files; `choco pack` +
+  `choco push` with a community API key; GHCR/Docker Hub already automated.
+- For the NEXT release, bump `IMSG_VERSION` + CMake `project(VERSION)` +
+  installer.iss + man page + snapcraft.yaml, tag `vX.Y.Z`, then re-fill the
+  Homebrew/Choco checksums against the new assets (see "Build/validate").
 - iOS app is source-only (needs Xcode + Apple Developer acct; not CI-built).
 - Installers are UNSIGNED (macOS notarization / Windows cert need credentials).
+- Still unbuilt by design: encrypted-backup decryption; attachment extraction
+  from backups; ephemeral cloud-Mac puller.

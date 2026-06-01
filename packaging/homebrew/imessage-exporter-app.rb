@@ -4,7 +4,7 @@
 # Update `version` + `sha256` on each release.
 cask "imessage-exporter-app" do
   version "0.2.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "e973937d988e64ac156429938b0f99a8c6d941167398225b093483cecf809a54"
 
   url "https://github.com/grioghar/imessage-exporter-redux/releases/download/v#{version}/iMessage-Exporter-macOS.dmg"
   name "iMessage Exporter"
