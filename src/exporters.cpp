@@ -408,6 +408,18 @@ std::string link_card(const std::string& url) {
            "</span><span class=\"linkcard-url\">" + eurl + "</span></span></a>";
 }
 
+// True if `text` (ignoring surrounding whitespace) is exactly one URL. Used to
+// drop the bare link above a rich card/embed for link-only messages, the way
+// Messages shows just the preview.
+bool is_single_url(const std::string& text) {
+    const std::size_t a = text.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return false;
+    const std::size_t b = text.find_last_not_of(" \t\r\n");
+    const std::string t = text.substr(a, b - a + 1);
+    if (t.rfind("http://", 0) != 0 && t.rfind("https://", 0) != 0) return false;
+    return t.find_first_of(" \t\r\n") == std::string::npos;
+}
+
 // One conversation as a self-contained <div class="conversation"> block, shared
 // by the single-chat document and the combined multi-chat document.
 std::string html_conversation(const Chat& chat) {
@@ -427,7 +439,15 @@ std::string html_conversation(const Chat& chat) {
            << html_escape(format_when(m)) << "</div>"
            << "<div class=\"bubble\">";
         bool wrote = false;
-        if (m.has_text()) { os << linkify_html(m.text); wrote = true; }
+        // Rich provider embeds (YouTube/Spotify/Vimeo iframes) and link cards for
+        // any URLs in the text, computed first so a link-only message can show
+        // just the card instead of a bare URL above it.
+        const std::string embeds =
+            m.has_text() ? media_embeds_html(m.text) : std::string();
+        if (m.has_text() && !(!embeds.empty() && is_single_url(m.text))) {
+            os << linkify_html(m.text);
+            wrote = true;
+        }
         for (const Attachment& a : m.attachments) {
             if (wrote) os << "<br>";
             const std::string name = html_escape(a.display_name());
@@ -455,9 +475,8 @@ std::string html_conversation(const Chat& chat) {
             }
             wrote = true;
         }
+        if (!embeds.empty()) { os << embeds; wrote = true; }
         if (!wrote) os << "<span class=\"empty\">(no content)</span>";
-        // Rich provider embeds (YouTube/Spotify/Vimeo) for any URLs in the text.
-        if (m.has_text()) os << media_embeds_html(m.text);
         os << "</div></div>\n";
     }
     os << "</div>\n";
