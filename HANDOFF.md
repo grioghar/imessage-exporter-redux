@@ -76,7 +76,7 @@ cmake --build build --target imessage-exporter-gui    # GUI (needs Qt6)
   `man/imessage-exporter.1`, `snap/snapcraft.yaml`, and the Homebrew/Choco defs.
 
 ## Status (UPDATE THIS EACH SESSION)
-- Releasing **v0.2.4**: Markdown export (`md`, engine); **PDF** export (GUI-only,
+- Released **v0.2.4** (latest; brew/choco at v0.2.4): Markdown export (`md`, engine); **PDF** export (GUI-only,
   HTML→PDF via QTextDocument+QPdfWriter); macOS DMG now ad-hoc codesigned (stable
   TCC identity) with two install targets (drag-to-/Applications + an "Install for
   current user.command" → ~/Applications); GUI "Copy Messages data to a local
