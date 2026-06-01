@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDate>
 #include <QDateEdit>
@@ -19,11 +20,13 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -36,6 +39,8 @@
 #include <string>
 
 #include "imsg/backup.hpp"
+#include "imsg/contact_store.hpp"
+#include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
@@ -130,6 +135,7 @@ MainWindow::MainWindow()
     since_->setCalendarPopup(true);
     since_->setEnabled(false);
     untilOn_ = new QCheckBox("To");
+    untilOn_->setToolTip("Leave unchecked to export from the 'From' date to now.");
     until_ = new QDateEdit(QDate::currentDate());
     until_->setDisplayFormat("yyyy-MM-dd");
     until_->setCalendarPopup(true);
@@ -178,6 +184,16 @@ MainWindow::MainWindow()
     googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
                            "saved contacts database (needs IMSG_GOOGLE_CLIENT_ID).");
     form->addRow("", googleBtn_);
+
+    auto* peopleRow = new QHBoxLayout;
+    peopleBtn_ = new QPushButton("Select people…");
+    peopleBtn_->setToolTip("Export only conversations with specific people.");
+    peopleLabel_ = new QLabel("All conversations");
+    peopleLabel_->setStyleSheet("color:#6e6e73");
+    peopleRow->addWidget(peopleBtn_);
+    peopleRow->addWidget(peopleLabel_);
+    peopleRow->addStretch();
+    form->addRow("People:", peopleRow);
 
     logLevel_ = new QComboBox;
     logLevel_->addItems({"error", "warn", "info", "debug"});
@@ -240,6 +256,7 @@ MainWindow::MainWindow()
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
     connect(icloudBtn_, &QPushButton::clicked, this,
             &MainWindow::importICloudContacts);
+    connect(peopleBtn_, &QPushButton::clicked, this, &MainWindow::pickPeople);
     connect(&watcher_, &QFutureWatcher<imsg::ExportSummary>::finished, this,
             &MainWindow::exportFinished);
     connect(&icloudWatcher_, &QFutureWatcher<icloud::Result>::finished, this,
@@ -319,6 +336,8 @@ MainWindow::MainWindow()
 
     onSourceChanged();
     onContactsChanged();
+    loadSettings();
+    QTimer::singleShot(0, this, [this] { maybeResumePrevious(); });
 }
 
 void MainWindow::onSourceChanged() {
@@ -452,6 +471,9 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
         default:
             break;
     }
+
+    for (const QString& p : selectedPeople_)
+        opts.only_participants.push_back(p.toStdString());
     return true;
 }
 
@@ -460,7 +482,9 @@ void MainWindow::setBusy(bool busy) {
     status_->setText(busy ? "Exporting…" : "Ready.");
 }
 
-void MainWindow::startExport() {
+void MainWindow::startExport() { startExportResuming(false); }
+
+void MainWindow::startExportResuming(bool resume) {
     std::string db_path, out_dir;
     imsg::Format fmt = imsg::Format::Text;
     imsg::ExportOptions opts;
@@ -469,6 +493,8 @@ void MainWindow::startExport() {
         QMessageBox::warning(this, "Cannot export", error);
         return;
     }
+    resuming_ = resume;
+    opts.skip_existing = resume;  // resume: don't redo finished conversation files
 
     imsg::LogLevel lvl;
     if (imsg::parse_log_level(logLevel_->currentText().toStdString(), lvl))
@@ -482,17 +508,48 @@ void MainWindow::startExport() {
     openBtn_->setEnabled(false);
     lastOutputDir_ = QString::fromStdString(out_dir);
 
+    // Persist a "job" record so it can be resumed / recovered after close.
+    saveSettings();
+    QSettings s;
+    s.setValue("job/state", "running");
+    s.setValue("job/done", 0);
+    s.setValue("job/total", 0);
+    jobRunning_ = true;
+
+    // Live log: append each line to the pane on the GUI thread, and buffer for
+    // the on-disk log file.
     auto buf = logBuffer_;
     auto mtx = logMutex_;
-    imsg::set_log_sink([buf, mtx](imsg::LogLevel level, const std::string& msg) {
-        std::lock_guard<std::mutex> lk(*mtx);
-        buf->push_back(std::string("[") + imsg::log_level_name(level) + "] " + msg);
+    imsg::set_log_sink([this, buf, mtx](imsg::LogLevel level, const std::string& msg) {
+        const QString line =
+            QString("[") + imsg::log_level_name(level) + "] " + QString::fromStdString(msg);
+        {
+            std::lock_guard<std::mutex> lk(*mtx);
+            buf->push_back(line.toStdString());
+        }
+        QMetaObject::invokeMethod(
+            this, [this, line] { logView_->appendPlainText(line); },
+            Qt::QueuedConnection);
     });
+
+    // Progress: marshal to the GUI thread.
+    opts.on_progress = [this](int done, int total) {
+        QMetaObject::invokeMethod(
+            this, [this, done, total] { onProgress(done, total); },
+            Qt::QueuedConnection);
+    };
 
     setBusy(true);
     watcher_.setFuture(QtConcurrent::run([db_path, out_dir, fmt, opts]() {
         return imsg::export_database(db_path, out_dir, fmt, opts);
     }));
+}
+
+void MainWindow::onProgress(int done, int total) {
+    status_->setText(QString("Exporting… %1 of %2 conversations").arg(done).arg(total));
+    QSettings s;
+    s.setValue("job/done", done);
+    s.setValue("job/total", total);
 }
 
 void MainWindow::writeLogFile(const QStringList& lines) {
@@ -541,6 +598,8 @@ void MainWindow::showExportError(const QString& error) {
 
 void MainWindow::exportFinished() {
     imsg::set_log_sink(nullptr);
+    jobRunning_ = false;
+    QSettings().setValue("job/state", "finished");
     QStringList lines;
     {
         std::lock_guard<std::mutex> lk(*logMutex_);
@@ -579,6 +638,172 @@ void MainWindow::exportFinished() {
 void MainWindow::openOutputDir() {
     if (!lastOutputDir_.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(lastOutputDir_));
+}
+
+void MainWindow::saveSettings() const {
+    QSettings s;
+    s.setValue("ui/source", source_->currentIndex());
+    s.setValue("ui/db", dbPath_->text());
+    s.setValue("ui/format", format_->currentText());
+    s.setValue("ui/output", outputDir_->text());
+    s.setValue("ui/me", meLabel_->text());
+    s.setValue("ui/sinceOn", sinceOn_->isChecked());
+    s.setValue("ui/since", since_->date().toString("yyyy-MM-dd"));
+    s.setValue("ui/untilOn", untilOn_->isChecked());
+    s.setValue("ui/until", until_->date().toString("yyyy-MM-dd"));
+    s.setValue("ui/combined", combined_->isChecked());
+    s.setValue("ui/copy", copyAttachments_->isChecked());
+    s.setValue("ui/embed", embedAttachments_->isChecked());
+    s.setValue("ui/contacts", contacts_->currentIndex());
+    s.setValue("ui/contactsPath", contactsPath_->text());
+    s.setValue("ui/logLevel", logLevel_->currentText());
+    s.setValue("ui/people", selectedPeople_);
+}
+
+void MainWindow::loadSettings() {
+    QSettings s;
+    if (!s.contains("ui/format")) return;  // first run: keep defaults
+    source_->setCurrentIndex(s.value("ui/source", source_->currentIndex()).toInt());
+    dbPath_->setText(s.value("ui/db").toString());
+    format_->setCurrentText(s.value("ui/format", "html").toString());
+    outputDir_->setText(s.value("ui/output", outputDir_->text()).toString());
+    meLabel_->setText(s.value("ui/me", "Me").toString());
+    sinceOn_->setChecked(s.value("ui/sinceOn", false).toBool());
+    untilOn_->setChecked(s.value("ui/untilOn", false).toBool());
+    const QDate sd = QDate::fromString(s.value("ui/since").toString(), "yyyy-MM-dd");
+    if (sd.isValid()) since_->setDate(sd);
+    const QDate ud = QDate::fromString(s.value("ui/until").toString(), "yyyy-MM-dd");
+    if (ud.isValid()) until_->setDate(ud);
+    combined_->setChecked(s.value("ui/combined", false).toBool());
+    copyAttachments_->setChecked(s.value("ui/copy", false).toBool());
+    embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
+    contacts_->setCurrentIndex(s.value("ui/contacts", 0).toInt());
+    contactsPath_->setText(s.value("ui/contactsPath").toString());
+    logLevel_->setCurrentText(s.value("ui/logLevel", "info").toString());
+    selectedPeople_ = s.value("ui/people").toStringList();
+    peopleLabel_->setText(selectedPeople_.isEmpty()
+                              ? "All conversations"
+                              : QString("%1 selected").arg(selectedPeople_.size()));
+    onSourceChanged();
+    onContactsChanged();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    const QString msg = jobRunning_
+                            ? "An export is still running. Close anyway? You can "
+                              "resume it next time."
+                            : "Close iMessage Exporter?";
+    if (QMessageBox::question(this, "Quit", msg) != QMessageBox::Yes) {
+        event->ignore();
+        return;
+    }
+    saveSettings();
+    if (jobRunning_) QSettings().setValue("job/state", "interrupted");
+    event->accept();
+}
+
+void MainWindow::maybeResumePrevious() {
+    QSettings s;
+    const QString state = s.value("job/state").toString();
+    if (state != "running" && state != "interrupted") return;
+
+    const bool crashed = (state == "running");  // never marked interrupted => crash
+    const int done = s.value("job/done", 0).toInt();
+    const int total = s.value("job/total", 0).toInt();
+    const QString card =
+        QString("<b>Previous export</b><br>Source: %1<br>Format: %2<br>"
+                "Output: %3<br>Progress: %4 of %5 conversations%6")
+            .arg(source_->currentText(), format_->currentText().toUpper(),
+                 outputDir_->text())
+            .arg(done)
+            .arg(total)
+            .arg(selectedPeople_.isEmpty()
+                     ? ""
+                     : QString("<br>People: %1 selected").arg(selectedPeople_.size()));
+
+    QMessageBox box(this);
+    box.setWindowTitle(crashed ? "Recover unfinished export" : "Resume export");
+    box.setTextFormat(Qt::RichText);
+    box.setText((crashed ? "The last export did not shut down cleanly.<br><br>"
+                         : "An export was interrupted when you last closed.<br><br>") +
+                card);
+    QPushButton* resume = box.addButton(crashed ? "Recover" : "Resume",
+                                        QMessageBox::AcceptRole);
+    box.addButton("Start new", QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() == resume)
+        startExportResuming(true);
+    else
+        s.remove("job");  // discard the old job
+}
+
+void MainWindow::pickPeople() {
+    std::string db_path, out_dir;
+    imsg::Format fmt = imsg::Format::Text;
+    imsg::ExportOptions opts;
+    QString error;
+    if (!buildInputs(db_path, out_dir, fmt, opts, error)) {
+        QMessageBox::warning(this, "Select people", error);
+        return;
+    }
+
+    imsg::ContactBook book;
+    if (!opts.contacts_path.empty())
+        book = imsg::load_contacts(opts.contacts_path);
+    else if (opts.use_contacts)
+        book = imsg::load_contacts_default();
+    if (opts.use_contact_store) {
+        imsg::ContactStore st(imsg::default_contact_store_path());
+        if (st.open()) st.load_into(book);
+    }
+
+    QStringList people;
+    try {
+        imsg::MessagesDatabase db(db_path, opts.me_label);
+        if (!book.empty()) db.set_contacts(&book);
+        db.open();
+        QSet<QString> seen;
+        for (const imsg::Chat& c : db.load_chat_index()) {
+            if (c.message_count == 0) continue;
+            for (const std::string& p : c.participants) {
+                QString q = QString::fromStdString(p);
+                if (!q.isEmpty() && !seen.contains(q)) { seen.insert(q); people << q; }
+            }
+        }
+    } catch (const imsg::DatabaseError& e) {
+        QMessageBox::warning(this, "Select people", e.what());
+        return;
+    }
+    people.sort(Qt::CaseInsensitive);
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Select people to export");
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel("Export only conversations with the checked people "
+                                 "(none checked = all):",
+                                 &dlg));
+    auto* list = new QListWidget(&dlg);
+    for (const QString& p : people) {
+        auto* item = new QListWidgetItem(p, list);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(selectedPeople_.contains(p) ? Qt::Checked : Qt::Unchecked);
+    }
+    list->setMinimumSize(420, 320);
+    layout->addWidget(list);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                         &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    selectedPeople_.clear();
+    for (int i = 0; i < list->count(); ++i)
+        if (list->item(i)->checkState() == Qt::Checked)
+            selectedPeople_ << list->item(i)->text();
+    peopleLabel_->setText(selectedPeople_.isEmpty()
+                              ? "All conversations"
+                              : QString("%1 selected").arg(selectedPeople_.size()));
 }
 
 void MainWindow::importICloudContacts() {

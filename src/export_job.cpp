@@ -64,6 +64,17 @@ fs::path out_path(const std::string& out_dir, const std::string& rel_utf8) {
     return fs::u8path(out_dir) / fs::u8path(rel_utf8);
 }
 
+// True if the chat should be exported given a people filter (empty = all).
+bool matches_participants(const Chat& chat, const std::vector<std::string>& only) {
+    if (only.empty()) return true;
+    for (const std::string& sel : only) {
+        if (chat.title() == sel) return true;
+        for (const std::string& p : chat.participants)
+            if (p == sel) return true;
+    }
+    return false;
+}
+
 // Expands a leading "~" to $HOME so attachment paths stored as "~/Library/..."
 // resolve to a real file. Other paths are returned unchanged.
 std::string expand_user_path(const std::string& path) {
@@ -112,6 +123,7 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
             seen_src.emplace(src, rel);
             a.copied_path = rel;
             ++copied;
+            log_info("copied attachment: " + base);
         }
     }
     return copied;
@@ -184,6 +196,7 @@ void embed_chat_attachments(Chat& chat,
                               ";base64," + base64_encode(bytes);
             cache.emplace(src, uri);
             a.data_uri = uri;
+            log_info("embedded attachment: " + fs::path(a.filename).filename().string());
         }
     }
 }
@@ -232,6 +245,11 @@ ExportSummary export_database(const std::string& db_path,
         std::unordered_map<std::string, std::string> embed_cache;  // src -> data URI
         int written = 0;
 
+        int total = 0;
+        for (const Chat& c : chats)
+            if (c.message_count > 0 && matches_participants(c, opts.only_participants))
+                ++total;
+
         // For combined export, one file streams every conversation in turn.
         std::ofstream combined;
         if (opts.combined) {
@@ -247,12 +265,24 @@ ExportSummary export_database(const std::string& db_path,
 
         for (Chat& chat : chats) {
             if (chat.message_count == 0) continue;
-
-            db.load_messages(chat);  // bodies for just this conversation
-            if (chat.messages.empty()) continue;  // e.g. filtered out by date
+            if (!matches_participants(chat, opts.only_participants)) continue;
 
             std::string slug = slugify(chat.title());
             if (slug.empty()) slug = "chat-" + std::to_string(chat.rowid);
+
+            // Resume: skip a per-conversation file already written by a prior run.
+            if (opts.skip_existing && !opts.combined) {
+                std::string nm = slug + "." + ext;
+                if (used_names.count(nm) == 0 && fs::exists(out_path(out_dir, nm), ec)) {
+                    used_names.insert(nm);
+                    ++written;
+                    if (opts.on_progress) opts.on_progress(written, total);
+                    continue;
+                }
+            }
+
+            db.load_messages(chat);  // bodies for just this conversation
+            if (chat.messages.empty()) continue;  // e.g. filtered out by date
 
             if (opts.copy_attachments)
                 summary.attachments_copied +=
@@ -280,6 +310,7 @@ ExportSummary export_database(const std::string& db_path,
             chat.messages.clear();
             chat.messages.shrink_to_fit();
             ++written;
+            if (opts.on_progress) opts.on_progress(written, total);
         }
 
         if (opts.combined) combined << combined_epilogue(fmt);

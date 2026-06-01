@@ -33,6 +33,9 @@ class MainWindow : public QWidget {
    public:
     MainWindow();
 
+   protected:
+    void closeEvent(QCloseEvent* event) override;
+
    private slots:
     void onSourceChanged();
     void onContactsChanged();
@@ -47,6 +50,7 @@ class MainWindow : public QWidget {
     void showHowToGetData();
     void showAbout();
     void runUpdateCheck(bool manual);
+    void pickPeople();
 
    private:
     // Validates the form and fills the engine inputs; returns false (+ message)
@@ -54,6 +58,11 @@ class MainWindow : public QWidget {
     bool buildInputs(std::string& db_path, std::string& out_dir, imsg::Format& fmt,
                      imsg::ExportOptions& opts, QString& error);
     void setBusy(bool busy);
+    void saveSettings() const;   // persist all fields (survives version updates)
+    void loadSettings();         // restore them on launch
+    void onProgress(int done, int total);    // export progress (main thread)
+    void maybeResumePrevious();  // prompt to resume/recover an unfinished job
+    void startExportResuming(bool resume);   // shared by Export + resume
     // Appends a session's log lines to the on-disk log file (logFilePath_).
     void writeLogFile(const QStringList& lines);
     // Error dialog with Copy / Open log file / (Open Settings) / Close.
@@ -99,4 +108,10 @@ class MainWindow : public QWidget {
 
     Updater* updater_ = nullptr;
     bool manualUpdateCheck_ = false;  // true when the user clicked "Check now"
+
+    QPushButton* peopleBtn_ = nullptr;
+    QLabel* peopleLabel_ = nullptr;
+    QStringList selectedPeople_;  // empty = all conversations
+    bool jobRunning_ = false;
+    bool resuming_ = false;       // current run is resuming a prior job
 };
