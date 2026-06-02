@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "imsg/models.hpp"
+#include "imsg/stats.hpp"
 
 namespace imsg {
 
@@ -23,6 +24,9 @@ std::string available_formats();
 std::string render_text(const Chat& chat);
 std::string render_json(const Chat& chat);
 std::string render_html(const Chat& chat);
+// Render with optional per-conversation stats appended.
+std::string render_html(const Chat& chat, const Stats* per_chat_stats,
+                        const StatsRenderOpts& stats_opts);
 std::string render_markdown(const Chat& chat);
 
 // Renders one conversation as a "SMS Backup & Restore" (Android app

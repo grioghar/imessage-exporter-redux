@@ -297,6 +297,15 @@ ExportSummary export_database(const std::string& db_path,
         int written = 0;
         Stats stats;  // accumulated only when opts.stats_cover (written at the end)
 
+        // Derive render options from the export options flags once up front.
+        StatsRenderOpts srOpts;
+        srOpts.timeline    = opts.stats_timeline;
+        srOpts.hourly      = opts.stats_hourly;
+        srOpts.weekday     = opts.stats_weekday;
+        srOpts.top_texters = opts.stats_top_texters;
+        srOpts.word_stats  = opts.stats_word_stats;
+        srOpts.fun_facts   = opts.stats_fun_facts;
+
         int total = 0;
         for (const Chat& c : chats)
             if (c.message_count > 0 && matches_participants(c, opts.only_participants))
@@ -360,13 +369,24 @@ ExportSummary export_database(const std::string& db_path,
                     name = slug + "-" + std::to_string(n) + "." + ext;
                 used_names.insert(name);
 
+                // For cover-page top-texters, link 1:1 conversations to their file.
+                if (opts.stats_cover && chat.participants.size() == 1)
+                    stats.handle_to_file[chat.participants[0]] = name;
+
                 fs::path path = out_path(out_dir, name);
                 std::ofstream out(path, std::ios::binary);
                 if (!out) {
                     summary.error = "cannot write '" + name + "' in " + out_dir;
                     return summary;
                 }
-                out << render(chat, fmt);
+                // For HTML format, optionally append per-conversation stats.
+                if (fmt == Format::Html && opts.stats_per_conversation) {
+                    Stats chatStats;
+                    stats_add(chatStats, chat);
+                    out << render_html(chat, &chatStats, srOpts);
+                } else {
+                    out << render(chat, fmt);
+                }
             }
 
             // Release this conversation's bodies before moving to the next one.
@@ -385,7 +405,7 @@ ExportSummary export_database(const std::string& db_path,
             fs::path path = out_path(out_dir, "00-statistics.html");
             std::ofstream out(path, std::ios::binary);
             if (out) {
-                out << render_stats_html(stats);
+                out << render_stats_html(stats, srOpts);
                 log_info("wrote statistics cover page: " + path.filename().string());
             } else {
                 log_warn("could not write statistics cover page to " + path.string());

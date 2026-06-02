@@ -32,6 +32,15 @@ struct ExportOptions {
     // Also write a standalone "00-statistics.html" cover page summarizing the
     // export (totals, time-of-day/weekday charts, top texters, fun facts).
     bool stats_cover = false;
+    // Per-conversation stats appended to each conversation's HTML page.
+    bool stats_per_conversation = false;
+    // Individual stat sections — apply to both the cover page and per-conversation.
+    bool stats_timeline = true;   // activity timeline chart (month by month)
+    bool stats_hourly = true;     // messages by hour of day
+    bool stats_weekday = true;    // messages by day of week
+    bool stats_top_texters = true;// top texters ranking
+    bool stats_word_stats = true; // word count, longest message, emoji
+    bool stats_fun_facts = true;  // fun facts section
 
     // Per-conversation stats section appended to each conversation's export.
     bool stats_per_conversation = false;

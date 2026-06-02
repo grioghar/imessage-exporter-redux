@@ -31,6 +31,13 @@ struct Stats {
     long long emoji = 0;            // emoji code points seen across bodies
     long long conversations = 0;    // distinct chats folded in
 
+    // Per-handle message count for top-texters; keyed by raw handle string.
+    std::map<std::string, int> handle_count;
+    // Relative URL for each handle's conversation file (set by export_job).
+    std::map<std::string, std::string> handle_to_file;
+    // Monthly activity: key = "YYYY-MM", value = message count.
+    std::map<std::string, int> monthly;
+
     // Distribution over local weekday (0 = Sunday .. 6 = Saturday) and hour
     // (0..23), from localtime of each dated message.
     std::array<long long, 7> by_weekday{};
@@ -58,10 +65,23 @@ struct Stats {
 // task's API; delegates to Stats::add).
 void stats_add(Stats& s, const Chat& chat);
 
+// Options controlling which sections appear in rendered stats output.
+struct StatsRenderOpts {
+    bool timeline    = true;
+    bool hourly      = true;
+    bool weekday     = true;
+    bool top_texters = true;
+    bool word_stats  = true;
+    bool fun_facts   = true;
+};
+
 // Renders a complete standalone HTML document summarizing `s`: headline totals,
 // CSS-only bar charts for the weekday/hour distributions, a top-senders list,
 // the date span, and a "Fun facts" section. No JavaScript, no external assets;
 // all text is HTML-escaped.
-std::string render_stats_html(const Stats& s);
+std::string render_stats_html(const Stats& st, const StatsRenderOpts& opts = {});
+
+// Condensed stats block (no <html>/<head>) for embedding in conversation pages.
+std::string render_stats_section_html(const Stats& st, const StatsRenderOpts& opts = {});
 
 }  // namespace imsg
