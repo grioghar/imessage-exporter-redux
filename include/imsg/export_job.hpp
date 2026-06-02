@@ -42,13 +42,15 @@ struct ExportOptions {
     bool stats_word_stats = true; // word count, longest message, emoji
     bool stats_fun_facts = true;  // fun facts section
 
-    // Swimlane timeline page options.
-    bool timeline_page     = false;  // write a standalone 00-timeline.html
+    // Write a standalone "00-timeline.html" swimlane visualisation of every
+    // conversation: one horizontal lane per contact, time on the X-axis,
+    // messages as clickable dots with a dual-handle range slider for zoom.
+    bool timeline_page     = false;
     bool timeline_photos   = true;   // show contact photos in lane headers
-    bool timeline_me_photo = true;   // use my own contact photo for the Me lane
-    bool timeline_previews = true;   // show message preview on hover
-    std::string timeline_density = "auto";  // auto / month / week / day / hour
-    std::string me_photo_uri;               // data URI or file URI for the Me photo
+    bool timeline_me_photo = true;   // use Me's own contact photo when available
+    bool timeline_previews = true;   // hover popup with message preview
+    std::string timeline_density = "auto";  // auto | hour | day | week | month
+    std::string me_photo_uri;               // optional data URI for the Me avatar
 
     // Copy each attachment's file into <out_dir>/attachments/... and link to it
     // from the export, instead of exporting only attachment metadata.
