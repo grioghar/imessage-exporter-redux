@@ -364,6 +364,49 @@ scope for 0.7.0:
   message on the timeline can optionally show where you were when you sent it.
   Waze and the real-time Google Maps Timeline API have no public endpoint; the
   Takeout JSON is the only Google export path.
+- **Media compression and cloud offload.** Attachment files are often the bulk of
+  an export. Two complementary approaches: (1) *transcode locally* — shell out to
+  `ffmpeg` (when installed) to convert images to WebP (25–35% smaller than JPEG at
+  equivalent quality) and videos to H.265/WebM at a configurable bitrate, with
+  graceful fallback when `ffmpeg` is absent; and (2) *cloud offload* — upload
+  attachments to Google Drive (using the existing Drive connector) and rewrite
+  `src=` paths to Drive URLs, so the HTML stays light and media is fetched
+  on-demand. Both modes are opt-in and can be combined (transcode then upload).
+- **Encryption-at-rest with self-decrypting exports.** Protect sensitive exports
+  with a password. The implementation uses AES-256-GCM with a PBKDF2-derived key:
+  for HTML exports the ciphertext is embedded directly in the file alongside an
+  inline Web Crypto API decryption loop — open in any modern browser, enter your
+  key, it decrypts in memory and renders, with no server, plugin, or special app
+  required. JSON and TXT exports write a standard encrypted container. Keys are
+  never stored; all cryptography runs in the browser or in the native binary.
+- **Conversation replay / message player.** A "play back this conversation" mode
+  embedded in each exported HTML file: messages appear one at a time in
+  chronological order as animated bubbles, with a speed control (1× to 20×) and a
+  scrubber to jump to any point. If location data is available (from the location
+  context feature), a mini-map in the corner pans and zooms to where each party
+  was when they sent their message. Pure HTML/CSS/JS, no server required.
+- **Extended statistics — unique, unexpected, and fun.** A greatly expanded stats
+  engine covering relationships and patterns that no other export tool surfaces:
+  - *Conversation dynamics:* who initiates more often; who ends conversations; the
+    "ghost ratio" (how often one side stops replying); double-texter frequency;
+    fastest-ever response time (to the second); average response time by hour of day.
+  - *Language fingerprints:* word frequency and phrase clouds per person; emoji
+    personality profile (top 10 emoji per sender); exclamation-point density;
+    question-asker vs answer-giver ratio; longest message ever sent ("The Novel");
+    total word count across all history ("N books' worth of conversation").
+  - *Temporal oddities:* night-owl index (% of messages sent midnight–4 am);
+    busiest single minute ever; the exact timestamp of the very first message to
+    each person; "comeback conversations" (threads silent for 6+ months that
+    restarted); seasonal activity — which month of the year you text most.
+  - *Relationship arcs:* a heat-map of message frequency over the years per contact
+    (fading friendships and growing ones visible at a glance); "dormant contacts"
+    (daily texters who went quiet); who you've known the longest based on first
+    message date.
+  - *Silly but accurate:* how many times you sent "on my way" (and to whom); "I
+    love you" count per relationship; most-used swear word (shown with partial
+    censor); longest unbroken chain of single-word replies; the contact most likely
+    to respond with just "ok"; your personal peak texting hour; and a "phone
+    addict score" (% of replies sent within 60 seconds of receiving).
 
 Suggestions and votes welcome — open an issue or add a 👍 to an existing one.
 
