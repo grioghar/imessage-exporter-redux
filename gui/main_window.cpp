@@ -230,8 +230,6 @@ MainWindow::MainWindow()
 
     combined_ = new QCheckBox("Single combined file (instead of one per conversation)");
     outForm->addRow("", combined_);
-    statsCover_ = new QCheckBox("Add a statistics cover page");
-    outForm->addRow("", statsCover_);
     tabs_->addTab(outputPage, "Output");
 
     // --- Run tab ------------------------------------------------------------
@@ -335,6 +333,69 @@ MainWindow::MainWindow()
     attCol->addWidget(richPreviews_);
     oForm->addRow("Attachments:", attCol);
     prefsTabs_->addTab(optsPage, "Export options");
+
+    // -- Statistics tab --
+    auto* statsTab = new QWidget;
+    auto* statsLay = new QVBoxLayout(statsTab);
+
+    auto* statsGroup = new QGroupBox("Enable statistics");
+    statsGroup->setCheckable(true);
+    statsGroup->setChecked(false);  // default off; loadSettings() restores it
+    auto* statsGroupLay = new QVBoxLayout(statsGroup);
+
+    // Select All / Unselect All row
+    auto* selRow = new QHBoxLayout;
+    auto* selAll = new QPushButton("Select All");
+    auto* selNone = new QPushButton("Unselect All");
+    selRow->addWidget(selAll);
+    selRow->addWidget(selNone);
+    selRow->addStretch();
+    statsGroupLay->addLayout(selRow);
+
+    // Output sub-group
+    auto* outputLabel = new QLabel("<b>Output</b>");
+    statsGroupLay->addWidget(outputLabel);
+    statsCover_ = new QCheckBox("Statistics cover page (00-statistics.html)");
+    statsGroupLay->addWidget(statsCover_);
+    statsPerConv_ = new QCheckBox("Per-conversation stats section");
+    statsGroupLay->addWidget(statsPerConv_);
+
+    // Content options
+    auto* contentLabel = new QLabel("<b>Content</b>");
+    statsGroupLay->addWidget(contentLabel);
+    statsTimeline_   = new QCheckBox("Activity timeline");
+    statsHourly_     = new QCheckBox("Messages by hour of day");
+    statsWeekday_    = new QCheckBox("Messages by day of week");
+    statsTopTexters_ = new QCheckBox("Top texters ranking");
+    statsWordStats_  = new QCheckBox("Word & emoji statistics");
+    statsFunFacts_   = new QCheckBox("Fun facts");
+    for (auto* cb : {statsTimeline_, statsHourly_, statsWeekday_,
+                     statsTopTexters_, statsWordStats_, statsFunFacts_}) {
+        cb->setChecked(true);
+        statsGroupLay->addWidget(cb);
+    }
+
+    statsLay->addWidget(statsGroup);
+    statsLay->addStretch();
+    prefsTabs_->addTab(statsTab, "Statistics");
+
+    // Wire Select All / Unselect All
+    QList<QCheckBox*> subBoxes = {statsCover_, statsPerConv_, statsTimeline_,
+        statsHourly_, statsWeekday_, statsTopTexters_, statsWordStats_, statsFunFacts_};
+    connect(selAll, &QPushButton::clicked, [=] {
+        for (auto* cb : subBoxes) cb->setChecked(true);
+    });
+    connect(selNone, &QPushButton::clicked, [=] {
+        for (auto* cb : subBoxes) cb->setChecked(false);
+    });
+
+    // Wire master group toggle: when unchecked, disable all sub-boxes
+    connect(statsGroup, &QGroupBox::toggled, [=](bool on) {
+        for (auto* cb : subBoxes) cb->setEnabled(on);
+        // When re-enabled, restore the cover default if nothing is on
+        if (on && !statsCover_->isChecked() && !statsPerConv_->isChecked())
+            statsCover_->setChecked(true);
+    });
 
     // -- Logging tab --
     auto* logPage = new QWidget;
@@ -587,7 +648,14 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.me_label = meLabel_->text().isEmpty() ? "Me" : meLabel_->text().toStdString();
     opts.html_theme = themeCombo_->currentText().toStdString();
     opts.combined = combined_->isChecked();
-    opts.stats_cover = statsCover_->isChecked();
+    opts.stats_cover = statsCover_ && statsCover_->isChecked();
+    opts.stats_per_conversation = statsPerConv_    && statsPerConv_->isChecked();
+    opts.stats_timeline         = statsTimeline_   && statsTimeline_->isChecked();
+    opts.stats_hourly           = statsHourly_     && statsHourly_->isChecked();
+    opts.stats_weekday          = statsWeekday_    && statsWeekday_->isChecked();
+    opts.stats_top_texters      = statsTopTexters_ && statsTopTexters_->isChecked();
+    opts.stats_word_stats       = statsWordStats_  && statsWordStats_->isChecked();
+    opts.stats_fun_facts        = statsFunFacts_   && statsFunFacts_->isChecked();
     opts.copy_attachments = copyAttachments_->isChecked();
     opts.embed_attachments = embedAttachments_->isChecked();
     opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
@@ -991,6 +1059,13 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/untilDate", until_->date().toString("yyyy-MM-dd"));
     s.setValue("ui/combined", combined_->isChecked());
     s.setValue("ui/statsCover", statsCover_->isChecked());
+    s.setValue("ui/statsPerConv",    statsPerConv_->isChecked());
+    s.setValue("ui/statsTimeline",   statsTimeline_->isChecked());
+    s.setValue("ui/statsHourly",     statsHourly_->isChecked());
+    s.setValue("ui/statsWeekday",    statsWeekday_->isChecked());
+    s.setValue("ui/statsTopTexters", statsTopTexters_->isChecked());
+    s.setValue("ui/statsWordStats",  statsWordStats_->isChecked());
+    s.setValue("ui/statsFunFacts",   statsFunFacts_->isChecked());
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
@@ -1023,7 +1098,14 @@ void MainWindow::loadSettings() {
     if (ud.isValid()) until_->setDate(ud);
     updateDateSummary();
     combined_->setChecked(s.value("ui/combined", false).toBool());
-    statsCover_->setChecked(s.value("ui/statsCover", false).toBool());
+    if (statsCover_)    statsCover_->setChecked(s.value("ui/statsCover", false).toBool());
+    if (statsPerConv_)    statsPerConv_->setChecked(s.value("ui/statsPerConv",    false).toBool());
+    if (statsTimeline_)   statsTimeline_->setChecked(s.value("ui/statsTimeline",   true).toBool());
+    if (statsHourly_)     statsHourly_->setChecked(s.value("ui/statsHourly",       true).toBool());
+    if (statsWeekday_)    statsWeekday_->setChecked(s.value("ui/statsWeekday",     true).toBool());
+    if (statsTopTexters_) statsTopTexters_->setChecked(s.value("ui/statsTopTexters",true).toBool());
+    if (statsWordStats_)  statsWordStats_->setChecked(s.value("ui/statsWordStats", true).toBool());
+    if (statsFunFacts_)   statsFunFacts_->setChecked(s.value("ui/statsFunFacts",   true).toBool());
     copyAttachments_->setChecked(s.value("ui/copy", true).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());

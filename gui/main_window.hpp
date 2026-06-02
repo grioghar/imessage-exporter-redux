@@ -112,6 +112,13 @@ class MainWindow : public QWidget {
     QLabel* dateSummary_ = nullptr;  // live "what will be exported" line
     QCheckBox* combined_ = nullptr;
     QCheckBox* statsCover_ = nullptr;  // write a statistics cover page (00-statistics.html)
+    QCheckBox* statsPerConv_    = nullptr;  // per-conversation stats section
+    QCheckBox* statsTimeline_   = nullptr;  // activity timeline
+    QCheckBox* statsHourly_     = nullptr;  // messages by hour chart
+    QCheckBox* statsWeekday_    = nullptr;  // messages by weekday chart
+    QCheckBox* statsTopTexters_ = nullptr;  // top texters section
+    QCheckBox* statsWordStats_  = nullptr;  // word/emoji stats
+    QCheckBox* statsFunFacts_   = nullptr;  // fun facts section
     QCheckBox* copyAttachments_ = nullptr;
     QCheckBox* embedAttachments_ = nullptr;
     QCheckBox* hiddenAttachDir_ = nullptr;
