@@ -286,4 +286,36 @@ void MessagesDatabase::load_messages(Chat& chat) {
                   "): loaded " + std::to_string(chat.messages.size()) + " message(s)");
 }
 
+std::vector<HandleStat> MessagesDatabase::handle_stats() {
+    if (!db_) throw DatabaseError("database is not open");
+    sqlite3* db = as_db(db_);
+
+    std::vector<HandleStat> stats;
+    // The newest message date per handle, plus that message's service. SQLite's
+    // bare-column rule pairs the non-aggregated m.service with the MAX(m.date)
+    // row. The service column is absent on some schemas, so fall back to NULL.
+    const bool has_service = table_columns(db, "message").count("service") != 0;
+    std::string service = has_service ? "m.service" : "NULL";
+    std::string sql =
+        "SELECT h.id, MAX(m.date) AS d, " + service +
+        " FROM message m JOIN handle h ON m.handle_id = h.ROWID GROUP BY h.ROWID";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            HandleStat s;
+            s.handle = column_text(stmt, 0);
+            if (s.handle.empty()) continue;
+            std::time_t when;
+            if (apple_time_to_epoch(sqlite3_column_int64(stmt, 1), when)) {
+                s.has_last = true;
+                s.last_date = when;
+            }
+            s.service = column_text(stmt, 2);  // "" when NULL/absent
+            stats.push_back(std::move(s));
+        }
+        sqlite3_finalize(stmt);
+    }
+    return stats;
+}
+
 }  // namespace imsg

@@ -20,6 +20,15 @@ class DatabaseError : public std::runtime_error {
 // Default location of the live Messages database for the current user.
 std::string default_db_path();
 
+// Per-handle summary used by GUIs to sort/filter the participant picker:
+// the most recent message date for a handle and the service it came over.
+struct HandleStat {
+    std::string handle;
+    std::time_t last_date = 0;
+    bool has_last = false;
+    std::string service;  // "iMessage"/"SMS"/"RCS" if present, else ""
+};
+
 class MessagesDatabase {
    public:
     // `me_label` is used as the sender name for messages you sent.
@@ -53,6 +62,11 @@ class MessagesDatabase {
     // memory stays proportional to the largest single conversation, not the
     // whole database.
     void load_messages(Chat& chat);
+
+    // Returns, for each handle that has any messages, the latest message date
+    // and the service of that newest message. Cheap (one grouped query); used
+    // by front-ends to sort/filter the participant picker.
+    std::vector<HandleStat> handle_stats();
 
    private:
     std::string db_path_;
