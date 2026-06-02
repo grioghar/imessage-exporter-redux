@@ -364,14 +364,19 @@ scope for 0.7.0:
   message on the timeline can optionally show where you were when you sent it.
   Waze and the real-time Google Maps Timeline API have no public endpoint; the
   Takeout JSON is the only Google export path.
-- **Media compression and cloud offload.** Attachment files are often the bulk of
-  an export. Two complementary approaches: (1) *transcode locally* — shell out to
-  `ffmpeg` (when installed) to convert images to WebP (25–35% smaller than JPEG at
-  equivalent quality) and videos to H.265/WebM at a configurable bitrate, with
-  graceful fallback when `ffmpeg` is absent; and (2) *cloud offload* — upload
-  attachments to Google Drive (using the existing Drive connector) and rewrite
-  `src=` paths to Drive URLs, so the HTML stays light and media is fetched
-  on-demand. Both modes are opt-in and can be combined (transcode then upload).
+- **Media compression and cloud offload** (via [grioghar/lightpress](https://github.com/grioghar/lightpress)).
+  A new sister library — `lightpress` — provides a zero-dependency C++17 JPEG/PNG
+  encoder, EXIF metadata stripper, bilinear/bicubic resize, and MP4/MOV container
+  rewriter that removes thumbnail tracks and cover-art atoms without re-encoding the
+  video bitstream. Its benchmark suite compares output size and SSIM quality against
+  ffmpeg baselines on CI. Integration into the exporter gives two compression modes:
+  (1) *local transcode* — re-encode images at a configurable quality level and strip
+  all EXIF metadata, typically achieving 30–60% size reduction; strip MP4 metadata
+  atoms for immediate gains without touching the video bitstream; for full video
+  transcoding, optionally shell out to `ffmpeg` when present; (2) *cloud offload* —
+  upload attachments to Google Drive (using the existing Drive connector) and rewrite
+  `src=` paths to Drive URLs, keeping the HTML self-contained and lightweight.
+  Both modes are opt-in and combinable.
 - **Encryption-at-rest with self-decrypting exports.** Protect sensitive exports
   with a password. The implementation uses AES-256-GCM with a PBKDF2-derived key:
   for HTML exports the ciphertext is embedded directly in the file alongside an
