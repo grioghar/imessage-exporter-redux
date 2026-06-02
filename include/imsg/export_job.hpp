@@ -33,6 +33,17 @@ struct ExportOptions {
     // export (totals, time-of-day/weekday charts, top texters, fun facts).
     bool stats_cover = false;
 
+    // Per-conversation stats section appended to each conversation's export.
+    bool stats_per_conversation = false;
+
+    // Which statistics sections to include in the cover page / per-conv output.
+    bool stats_timeline   = true;  // activity timeline
+    bool stats_hourly     = true;  // messages by hour of day chart
+    bool stats_weekday    = true;  // messages by day of week chart
+    bool stats_top_texters = true; // top texters ranking
+    bool stats_word_stats  = true; // word & emoji statistics
+    bool stats_fun_facts   = true; // fun facts section
+
     // Copy each attachment's file into <out_dir>/attachments/... and link to it
     // from the export, instead of exporting only attachment metadata.
     bool copy_attachments = false;
