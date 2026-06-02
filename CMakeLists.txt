@@ -8,10 +8,31 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # So the static core/db libraries link cleanly into the (PIE) Qt GUI executable.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Build timestamp (YYYYMMDDHHMM, 24h) appended to the displayed version. Generated
-# into the build tree; only the CLI/GUI consume it (the core/bridge use the bare
-# IMSG_VERSION so the SwiftPM/iOS build needs no generated header).
-string(TIMESTAMP IMSG_BUILD_STAMP "%Y%m%d%H%M")  # YYYYMMDDHHMM, 24h
+# Datetime sub-version (YYYYMMDDHHMM, 24h) appended to the displayed version as
+# IMSG_VERSION.<stamp>. Resolved in priority order so a release built from a
+# tagged commit reads EXACTLY the tag:
+#   1. an explicit -DIMSG_BUILD_STAMP=... ;
+#   2. the trailing datetime of the current tag (vX.Y.Z.<YYYYMMDDHHMM>), taken
+#      from $GITHUB_REF_NAME in CI or `git describe` locally;
+#   3. otherwise the current build time.
+if(NOT DEFINED IMSG_BUILD_STAMP OR IMSG_BUILD_STAMP STREQUAL "")
+  set(_imsg_ref "$ENV{GITHUB_REF_NAME}")
+  if(NOT _imsg_ref)
+    execute_process(COMMAND git describe --tags --exact-match
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                    OUTPUT_VARIABLE _imsg_ref OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+  endif()
+  if(_imsg_ref MATCHES "\\.([0-9]+)$")  # trailing ".<digits>" of the tag
+    string(LENGTH "${CMAKE_MATCH_1}" _imsg_len)
+    if(_imsg_len GREATER_EQUAL 8)  # looks like a YYYYMMDDHHMM datetime
+      set(IMSG_BUILD_STAMP "${CMAKE_MATCH_1}")
+    endif()
+  endif()
+endif()
+if(NOT DEFINED IMSG_BUILD_STAMP OR IMSG_BUILD_STAMP STREQUAL "")
+  string(TIMESTAMP IMSG_BUILD_STAMP "%Y%m%d%H%M")  # fallback: build time
+endif()
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.hpp.in
                ${CMAKE_BINARY_DIR}/generated/imsg/build_stamp.hpp @ONLY)
 
