@@ -581,6 +581,8 @@ void test_themes() {
     check(contains(html, "class=\"msg me\""), "theme: matrix preserves msg markup");
     check(contains(html, "/*theme:matrix*/"), "theme: matrix css emitted in head");
     imsg::set_html_theme("ios");  // restore default for any later renders
+}
+
 void test_stats() {
     // Fold make_chat() (2 text msgs + 1 attachment-only msg) into an accumulator
     // twice, exercising both the dated (m1) and undated (m2/m3) message paths.
