@@ -33,4 +33,16 @@ std::string ContactBook::name_for(const std::string& handle) const {
     return it != by_key_.end() ? it->second : std::string();
 }
 
+void ContactBook::add_photo(const std::string& handle, const std::string& data_uri) {
+    if (data_uri.empty()) return;
+    std::string key = key_for(handle);
+    if (key.empty()) return;
+    photo_by_key_.emplace(key, data_uri);  // first photo for a key wins
+}
+
+std::string ContactBook::photo_for(const std::string& handle) const {
+    auto it = photo_by_key_.find(key_for(handle));
+    return it != photo_by_key_.end() ? it->second : std::string();
+}
+
 }  // namespace imsg

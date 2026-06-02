@@ -389,6 +389,42 @@ void test_avatar_in_recap() {
     check(contains(h, ">M</span>"), "avatar: initials 'M' for sender \"Me\"");
 }
 
+void test_vcard_photo() {
+    imsg::ContactBook book;
+    imsg::parse_vcards(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Jane Doe\r\nTEL:+15551234567\r\n"
+        "PHOTO;ENCODING=b;TYPE=JPEG:QUJD\r\nEND:VCARD\r\n",
+        book);
+    check_eq(book.photo_for("+15551234567"), "data:image/jpeg;base64,QUJD",
+             "vcard: 3.0 base64 PHOTO -> data URI");
+
+    imsg::ContactBook b2;
+    imsg::parse_vcards(
+        "BEGIN:VCARD\nFN:X\nEMAIL:x@y.com\nPHOTO:data:image/png;base64,ZZ\nEND:VCARD\n",
+        b2);
+    check_eq(b2.photo_for("x@y.com"), "data:image/png;base64,ZZ",
+             "vcard: 4.0 inline data-URI PHOTO kept as-is");
+
+    imsg::ContactBook b3;  // a URI-only PHOTO isn't embeddable -> no photo
+    imsg::parse_vcards(
+        "BEGIN:VCARD\nFN:Y\nTEL:5550000000\nPHOTO;VALUE=uri:https://x/p.jpg\nEND:VCARD\n",
+        b3);
+    check(b3.photo_for("5550000000").empty(), "vcard: URI PHOTO is skipped");
+}
+
+void test_avatar_photo_render() {
+    imsg::Chat c;
+    c.participants = {"+15551234567"};
+    imsg::Message m;
+    m.sender = "Jane Doe";
+    m.avatar_uri = "data:image/jpeg;base64,QUJD";
+    c.messages.push_back(m);
+    check(contains(imsg::render_html(c),
+                   "<span class=\"avatar\"><img loading=\"lazy\" alt=\"\" "
+                   "src=\"data:image/jpeg;base64,QUJD\">"),
+          "avatar: contact photo rendered as <img> when present");
+}
+
 void test_inline_media_fallback() {
     // The Messages DB often leaves attachment.mime_type empty; pictures/movies
     // must still inline (guessed from the file name), not degrade to bare links.
@@ -468,6 +504,8 @@ int main() {
     test_link_preview_resolver();
     test_url_only_message_card();
     test_avatar_in_recap();
+    test_vcard_photo();
+    test_avatar_photo_render();
     test_attachment_embed_html();
     test_inline_media_fallback();
     test_markdown_export();

@@ -28,9 +28,11 @@ class ContactStore {
     bool open();
     void close();
 
-    // Inserts or updates one handle's name + source tag.
+    // Inserts or updates one handle's name + source tag, and optionally a photo
+    // (a "data:..." URI or an https photo URL). An empty photo won't clobber an
+    // existing one.
     void upsert(const std::string& handle, const std::string& name,
-                const std::string& source);
+                const std::string& source, const std::string& photo = std::string());
 
     // Number of stored handles.
     int count() const;

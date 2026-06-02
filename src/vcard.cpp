@@ -63,6 +63,43 @@ void split_property(const std::string& line, std::string& name, std::string& val
     name = to_upper(trim(prop));
 }
 
+// Turns a vCard PHOTO line into a "data:image/...;base64,..." URI, or "" when it
+// isn't an embeddable inline image (e.g. a URI-only PHOTO that would need a
+// network fetch). Handles vCard 3.0 (ENCODING=b/BASE64;TYPE=JPEG:<base64>) and
+// 4.0 (PHOTO:data:image/...;base64,...). Long values were already unfolded.
+std::string photo_data_uri(const std::string& line) {
+    std::size_t colon = line.find(':');
+    if (colon == std::string::npos) return "";
+    const std::string head = to_upper(line.substr(0, colon));  // params
+    std::string value = line.substr(colon + 1);
+
+    if (value.compare(0, 5, "data:") == 0)  // 4.0 inline data URI
+        return value.find("image") != std::string::npos ? value : "";
+    if (value.compare(0, 4, "http") == 0) return "";  // URI: not embeddable offline
+    if (head.find("BASE64") == std::string::npos &&
+        head.find("ENCODING=B") == std::string::npos)
+        return "";  // unknown / unencoded form
+
+    std::string type = "jpeg";
+    std::size_t tp = head.find("TYPE=");
+    if (tp != std::string::npos) {
+        std::string t;
+        for (char c : head.substr(tp + 5)) {
+            if (std::isalnum(static_cast<unsigned char>(c)))
+                t += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            else
+                break;
+        }
+        if (t == "jpg") t = "jpeg";
+        if (!t.empty()) type = t;
+    }
+    std::string b64;
+    for (char c : value)
+        if (!std::isspace(static_cast<unsigned char>(c))) b64 += c;
+    if (b64.empty()) return "";
+    return "data:image/" + type + ";base64," + b64;
+}
+
 // "First Last" from an N value "Last;First;Middle;Prefix;Suffix".
 std::string name_from_n(const std::string& value) {
     std::string last, first;
@@ -79,7 +116,7 @@ std::string name_from_n(const std::string& value) {
 }  // namespace
 
 void parse_vcards(const std::string& text, ContactBook& book) {
-    std::string fn, n_name, org;
+    std::string fn, n_name, org, photo;
     std::vector<std::string> handles;  // TEL + EMAIL values for the current card
     bool in_card = false;
 
@@ -87,6 +124,7 @@ void parse_vcards(const std::string& text, ContactBook& book) {
         fn.clear();
         n_name.clear();
         org.clear();
+        photo.clear();
         handles.clear();
     };
 
@@ -101,8 +139,10 @@ void parse_vcards(const std::string& text, ContactBook& book) {
         } else if (name == "END") {
             if (in_card) {
                 std::string display = !fn.empty() ? fn : (!n_name.empty() ? n_name : org);
-                if (!display.empty())
-                    for (const std::string& h : handles) book.add(h, display);
+                for (const std::string& h : handles) {
+                    if (!display.empty()) book.add(h, display);
+                    if (!photo.empty()) book.add_photo(h, photo);
+                }
             }
             in_card = false;
         } else if (!in_card) {
@@ -117,6 +157,8 @@ void parse_vcards(const std::string& text, ContactBook& book) {
             // ContactBook::key_for normalizes (digits-only phones, lowercased
             // emails), so a "tel:" URI scheme or formatting needs no cleanup.
             handles.push_back(trim(value));
+        } else if (name == "PHOTO") {
+            if (photo.empty()) photo = photo_data_uri(line);  // first usable photo
         }
     }
 }

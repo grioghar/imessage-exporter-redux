@@ -40,6 +40,10 @@ struct Message {
     std::string sender;          // handle id, or the "me" label
     std::string service;         // "iMessage" / "SMS"
 
+    // "data:image/...;base64,..." photo for the sender, resolved from contacts
+    // when available; empty falls back to a monogram avatar in the HTML recap.
+    std::string avatar_uri;
+
     bool has_chat = false;
     long long chat_id = -1;
 

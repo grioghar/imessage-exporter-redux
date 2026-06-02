@@ -61,7 +61,8 @@ bool ContactStore::open() {
     }
     const char* schema =
         "CREATE TABLE IF NOT EXISTS contacts ("
-        "handle TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT, updated_at INTEGER)";
+        "handle TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT, "
+        "photo TEXT, updated_at INTEGER)";
     char* err = nullptr;
     if (sqlite3_exec(db, schema, nullptr, nullptr, &err) != SQLITE_OK) {
         log_warn(std::string("contact store: schema: ") + (err ? err : "?"));
@@ -69,6 +70,10 @@ bool ContactStore::open() {
         sqlite3_close(db);
         return false;
     }
+    // Add the photo column to databases created before it existed (ignore the
+    // "duplicate column" error when it's already present).
+    sqlite3_exec(db, "ALTER TABLE contacts ADD COLUMN photo TEXT", nullptr, nullptr,
+                 nullptr);
     db_ = db;
     return true;
 }
@@ -81,18 +86,22 @@ void ContactStore::close() {
 }
 
 void ContactStore::upsert(const std::string& handle, const std::string& name,
-                          const std::string& source) {
+                          const std::string& source, const std::string& photo) {
     if (!db_ || handle.empty() || name.empty()) return;
     const char* sql =
-        "INSERT INTO contacts(handle, name, source, updated_at) "
-        "VALUES(?,?,?,strftime('%s','now')) "
+        "INSERT INTO contacts(handle, name, source, photo, updated_at) "
+        "VALUES(?,?,?,?,strftime('%s','now')) "
         "ON CONFLICT(handle) DO UPDATE SET name=excluded.name, "
-        "source=excluded.source, updated_at=excluded.updated_at";
+        "source=excluded.source, updated_at=excluded.updated_at, "
+        // keep an existing photo when the new row doesn't carry one
+        "photo=CASE WHEN excluded.photo IS NOT NULL AND excluded.photo<>'' "
+        "THEN excluded.photo ELSE contacts.photo END";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(as_db(db_), sql, -1, &stmt, nullptr) != SQLITE_OK) return;
     sqlite3_bind_text(stmt, 1, handle.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, source.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, photo.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -117,11 +126,14 @@ ContactBook ContactStore::load() const {
 void ContactStore::load_into(ContactBook& book) const {
     if (!db_) return;
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(as_db(db_), "SELECT handle, name FROM contacts", -1,
+    if (sqlite3_prepare_v2(as_db(db_), "SELECT handle, name, photo FROM contacts", -1,
                            &stmt, nullptr) != SQLITE_OK)
         return;
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-        book.add(column_text(stmt, 0), column_text(stmt, 1));
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const std::string handle = column_text(stmt, 0);
+        book.add(handle, column_text(stmt, 1));
+        book.add_photo(handle, column_text(stmt, 2));
+    }
     sqlite3_finalize(stmt);
 }
 
