@@ -119,6 +119,12 @@ class MainWindow : public QWidget {
     QCheckBox* statsTopTexters_ = nullptr;  // top texters section
     QCheckBox* statsWordStats_  = nullptr;  // word/emoji stats
     QCheckBox* statsFunFacts_   = nullptr;  // fun facts section
+    // Timeline tab controls.
+    QCheckBox* timelinePage_     = nullptr;
+    QCheckBox* timelinePhotos_   = nullptr;
+    QCheckBox* timelineMePhoto_  = nullptr;
+    QCheckBox* timelinePreviews_ = nullptr;
+    QComboBox* timelineDensity_  = nullptr;
     QCheckBox* copyAttachments_ = nullptr;
     QCheckBox* embedAttachments_ = nullptr;
     QCheckBox* hiddenAttachDir_ = nullptr;

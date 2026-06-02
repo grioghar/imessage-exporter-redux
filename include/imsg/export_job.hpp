@@ -42,6 +42,14 @@ struct ExportOptions {
     bool stats_word_stats = true; // word count, longest message, emoji
     bool stats_fun_facts = true;  // fun facts section
 
+    // Swimlane timeline page options.
+    bool timeline_page     = false;  // write a standalone 00-timeline.html
+    bool timeline_photos   = true;   // show contact photos in lane headers
+    bool timeline_me_photo = true;   // use my own contact photo for the Me lane
+    bool timeline_previews = true;   // show message preview on hover
+    std::string timeline_density = "auto";  // auto / month / week / day / hour
+    std::string me_photo_uri;               // data URI or file URI for the Me photo
+
     // Copy each attachment's file into <out_dir>/attachments/... and link to it
     // from the export, instead of exporting only attachment metadata.
     bool copy_attachments = false;
