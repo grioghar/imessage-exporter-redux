@@ -291,13 +291,24 @@ std::vector<HandleStat> MessagesDatabase::handle_stats() {
     sqlite3* db = as_db(db_);
 
     std::vector<HandleStat> stats;
-    // The newest message date per handle, plus that message's service. SQLite's
-    // bare-column rule pairs the non-aggregated m.service with the MAX(m.date)
-    // row. The service column is absent on some schemas, so fall back to NULL.
+    // Preferred service per handle: iMessage > RCS > SMS (or whatever else).
+    // We use COUNT-based aggregation rather than a bare m.service column so
+    // the result is well-defined and resilient to occasional SMS/RCS fall-back
+    // messages in an otherwise iMessage conversation.  A contact who sent 99
+    // iMessages and 1 SMS (because iMessage was momentarily unavailable) should
+    // still show as "iMessage", not "SMS".
+    // The service column is absent on some schemas; fall back gracefully.
     const bool has_service = table_columns(db, "message").count("service") != 0;
-    std::string service = has_service ? "m.service" : "NULL";
+    std::string service_expr = has_service
+        ? "CASE"
+          " WHEN SUM(CASE WHEN m.service='iMessage' THEN 1 ELSE 0 END) > 0"
+          " THEN 'iMessage'"
+          " WHEN SUM(CASE WHEN m.service='RCS' THEN 1 ELSE 0 END) > 0"
+          " THEN 'RCS'"
+          " ELSE MAX(m.service) END"
+        : "NULL";
     std::string sql =
-        "SELECT h.id, MAX(m.date) AS d, " + service +
+        "SELECT h.id, MAX(m.date) AS d, " + service_expr +
         " FROM message m JOIN handle h ON m.handle_id = h.ROWID GROUP BY h.ROWID";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
