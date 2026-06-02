@@ -14,24 +14,28 @@ OAuth client once and paste it into **Connect Google Contacts…** (it also read
 
 ## One-time setup (~5 minutes)
 
-1. **Project** — open the [Google Cloud Console](https://console.cloud.google.com/)
-   and create or select a project.
-2. **Enable the API** — **APIs & Services → Library**, search **People API**,
-   **Enable**.
-3. **Google Auth Platform** — go to **APIs & Services → OAuth consent screen**
-   (this opens *Google Auth Platform*). If prompted, click **Get started**, then:
-   - **Branding:** app name, your user-support email, developer contact email.
-   - **Audience:** User type **External**; leave **Publishing status = Testing**;
-     under **Test users**, **Add users** and enter the Google account whose
-     contacts you'll export. (Test users can sign in immediately with no Google
-     verification.)
-   - **Data access:** **Add or remove scopes** → add
-     **`https://www.googleapis.com/auth/contacts.readonly`** → Update/Save. To
-     also upload exports to Drive, add **`https://www.googleapis.com/auth/drive.file`**
-     (the app can only touch files it creates — see *Google Drive upload* below).
-4. **Create the client** — **Clients → Create client** (a.k.a. Credentials →
-   Create credentials → OAuth client ID), Application type **Desktop app**, name
-   it anything, **Create**.
+Each step links straight to the page you need (no web-searching required):
+
+1. **Project** — [create a new project](https://console.cloud.google.com/projectcreate)
+   (or pick an existing one).
+2. **Enable the API** — enable the
+   [People API](https://console.cloud.google.com/apis/library/people.googleapis.com)
+   (and, for Drive upload, the
+   [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)).
+3. **[Google Auth Platform](https://console.cloud.google.com/auth/overview)** — click
+   **Get started**, then:
+   - **[Branding](https://console.cloud.google.com/auth/branding):** app name, your
+     user-support email, developer contact email.
+   - **[Audience](https://console.cloud.google.com/auth/audience):** User type
+     **External**; leave **Publishing status = Testing**; under **Test users**,
+     **Add users** and enter the Google account whose contacts you'll export.
+   - **[Data access](https://console.cloud.google.com/auth/scopes):** **Add or remove
+     scopes** → add **`https://www.googleapis.com/auth/contacts.readonly`** →
+     Update/Save. For Drive upload, also add
+     **`https://www.googleapis.com/auth/drive.file`** (the app can only touch files
+     it creates — see *Google Drive upload* below).
+4. **Create the client** — [Clients](https://console.cloud.google.com/auth/clients) →
+   **Create client**, Application type **Desktop app**, name it anything, **Create**.
 5. **Download JSON** (the ⬇ button next to the client) — or just copy the
    **Client ID** and **Client secret** from the dialog.
 
