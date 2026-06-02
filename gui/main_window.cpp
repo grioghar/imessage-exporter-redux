@@ -1561,7 +1561,7 @@ void MainWindow::runUpdateCheck(bool manual) {
 void MainWindow::showAbout() {
     richTextDialog(
         this, "About iMessage Exporter",
-        "<h3>iMessage Exporter " IMSG_VERSION "-" IMSG_BUILD_STAMP "</h3>"
+        "<h3>iMessage Exporter " IMSG_VERSION "." IMSG_BUILD_STAMP "</h3>"
         "<p>Export macOS iMessage / SMS history to TXT, JSON, or HTML.</p>"
         "<p>A small, fast C++ tool with a Qt desktop front-end, sharing one "
         "export engine across the CLI, desktop, and iOS.</p>"

@@ -21,7 +21,7 @@ namespace fs = std::filesystem;
 namespace {
 
 // Displayed version includes the build timestamp, e.g. 0.2.2-0106261004.
-constexpr const char* kVersion = IMSG_VERSION "-" IMSG_BUILD_STAMP;
+constexpr const char* kVersion = IMSG_VERSION "." IMSG_BUILD_STAMP;
 
 void print_usage(std::ostream& os) {
     os << "Usage: imessage-exporter [options]\n\n"
