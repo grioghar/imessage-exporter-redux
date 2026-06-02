@@ -73,6 +73,11 @@ std::string html_escape(const std::string& s) {
     return out;
 }
 
+// Escapes a string for an XML attribute value (& < > " '). html_escape already
+// covers exactly this set — alias it so the Android renderer reads as XML, not
+// HTML, at call sites.
+std::string xml_attr(const std::string& s) { return html_escape(s); }
+
 // MIME family of a media file from its extension, or "" when unknown. The
 // Messages DB's attachment.mime_type column is frequently empty, so the
 // renderers fall back to this to decide whether to inline a picture/movie.
@@ -194,6 +199,7 @@ bool parse_format(const std::string& name, Format& out) {
     if (name == "json") { out = Format::Json; return true; }
     if (name == "html") { out = Format::Html; return true; }
     if (name == "md" || name == "markdown") { out = Format::Markdown; return true; }
+    if (name == "android" || name == "xml") { out = Format::Android; return true; }
     return false;
 }
 
@@ -202,11 +208,12 @@ std::string extension_for(Format fmt) {
         case Format::Json: return "json";
         case Format::Html: return "html";
         case Format::Markdown: return "md";
+        case Format::Android: return "xml";
         case Format::Text: default: return "txt";
     }
 }
 
-std::string available_formats() { return "txt, md, json, html"; }
+std::string available_formats() { return "txt, md, json, html, android"; }
 
 std::string render_text(const Chat& chat) {
     std::ostringstream os;
@@ -320,6 +327,36 @@ std::string render_json(const Chat& chat) {
 }
 
 namespace {
+
+// --- Android "SMS Backup & Restore" XML ------------------------------------
+
+// One <sms/> row per text message in `chat`, for the SMS Backup & Restore app.
+// Shared by render_android (full single-chat doc) and combined_item (rows only,
+// no <smses> wrapper). Messages with no text are skipped; MMS/attachments are
+// out of scope for v1, so attachment-only messages produce nothing.
+std::string android_sms_rows(const Chat& chat) {
+    // The other party's handle: the chat's first participant, else its
+    // identifier. Used as `address` for messages we sent (m.sender is "Me").
+    const std::string other =
+        !chat.participants.empty() ? chat.participants.front() : chat.chat_identifier;
+    std::ostringstream os;
+    for (const Message& m : chat.messages) {
+        if (!m.has_text()) continue;  // MMS/attachment-only: not exported in v1
+        // address/contact_name come from the resolved sender (a raw handle, or a
+        // contact name when --contacts is used; the model keeps only one).
+        const std::string address = m.is_from_me ? other : m.sender;
+        const std::string contact = address.empty() ? "(Unknown)" : address;
+        const long long date_ms = m.has_date ? static_cast<long long>(m.date) * 1000LL : 0;
+        os << "  <sms protocol=\"0\" address=\"" << xml_attr(address) << "\" date=\""
+           << date_ms << "\" type=\"" << (m.is_from_me ? "2" : "1")
+           << "\" subject=\"null\" body=\"" << xml_attr(m.text)
+           << "\" toa=\"null\" sc_toa=\"null\" service_center=\"null\" read=\"1\" "
+              "status=\"-1\" locked=\"0\" readable_date=\""
+           << xml_attr(format_when(m)) << "\" contact_name=\"" << xml_attr(contact)
+           << "\" />\n";
+    }
+    return os.str();
+}
 
 // --- URL detection / linkifying / provider embeds --------------------------
 
@@ -630,11 +667,24 @@ std::string render_html(const Chat& chat) {
     return html_head(chat.title()) + html_conversation(chat) + kHtmlTail;
 }
 
+std::string render_android(const Chat& chat) {
+    const std::string rows = android_sms_rows(chat);
+    std::size_t count = 0;
+    for (const Message& m : chat.messages)
+        if (m.has_text()) ++count;
+    std::ostringstream os;
+    os << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+       << "<smses count=\"" << count << "\">\n"
+       << rows << "</smses>\n";
+    return os.str();
+}
+
 std::string render(const Chat& chat, Format fmt) {
     switch (fmt) {
         case Format::Json: return render_json(chat);
         case Format::Html: return render_html(chat);
         case Format::Markdown: return render_markdown(chat);
+        case Format::Android: return render_android(chat);
         case Format::Text: default: return render_text(chat);
     }
 }
@@ -643,6 +693,10 @@ std::string combined_prologue(Format fmt) {
     switch (fmt) {
         case Format::Json: return "{\n  \"conversations\": [";
         case Format::Html: return html_head("iMessage export");
+        // Omitting count is fine for combined — SMS Backup & Restore tolerates it
+        // and we'd otherwise need every chat loaded to total it up front.
+        case Format::Android:
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smses>\n";
         case Format::Text: default: return "";
     }
 }
@@ -656,6 +710,10 @@ std::string combined_item(const Chat& chat, Format fmt, std::size_t index) {
             return html_conversation(chat);
         case Format::Markdown:
             return (index ? std::string("\n---\n\n") : "") + render_markdown(chat);
+        case Format::Android:
+            // Just this chat's <sms> rows; the <smses> wrapper is in the
+            // prologue/epilogue. (index unused — rows simply concatenate.)
+            return android_sms_rows(chat);
         case Format::Text:
         default:
             // Each render_text already ends in a blank line; separate chats with
@@ -668,6 +726,7 @@ std::string combined_epilogue(Format fmt) {
     switch (fmt) {
         case Format::Json: return "\n  ]\n}\n";
         case Format::Html: return kHtmlTail;
+        case Format::Android: return "</smses>\n";
         case Format::Text: default: return "";
     }
 }

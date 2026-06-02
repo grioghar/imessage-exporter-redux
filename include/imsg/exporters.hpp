@@ -9,12 +9,12 @@
 
 namespace imsg {
 
-enum class Format { Text, Json, Html, Markdown };
+enum class Format { Text, Json, Html, Markdown, Android };
 
-// Parses a format name ("txt"/"json"/"html"); returns false if unknown.
+// Parses a format name ("txt"/"json"/"html"/"android"); returns false if unknown.
 bool parse_format(const std::string& name, Format& out);
 
-// File extension for a format ("txt"/"json"/"html").
+// File extension for a format ("txt"/"json"/"html"/"xml").
 std::string extension_for(Format fmt);
 
 // Comma-separated list of supported format names, for help text.
@@ -24,6 +24,13 @@ std::string render_text(const Chat& chat);
 std::string render_json(const Chat& chat);
 std::string render_html(const Chat& chat);
 std::string render_markdown(const Chat& chat);
+
+// Renders one conversation as a "SMS Backup & Restore" (Android app
+// com.riteshsahu.SMSBackupRestore) "smses" XML document: a full
+// <?xml ...?><smses count="N">…</smses> with one <sms/> per text message.
+// Lets a user move their texts onto Android. Attachments/MMS are out of scope
+// for v1 (only messages with text are emitted).
+std::string render_android(const Chat& chat);
 
 // HTML-escapes `text` and turns http(s) URLs into links that open in a new
 // window/tab (target="_blank" rel="noopener noreferrer").

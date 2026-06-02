@@ -137,8 +137,10 @@ void test_format_parsing() {
     check(imsg::parse_format("txt", f) && f == imsg::Format::Text, "format: txt");
     check(imsg::parse_format("json", f) && f == imsg::Format::Json, "format: json");
     check(imsg::parse_format("html", f) && f == imsg::Format::Html, "format: html");
+    check(imsg::parse_format("android", f) && f == imsg::Format::Android, "format: android");
     check(!imsg::parse_format("pdf", f), "format: unknown rejected");
     check_eq(imsg::extension_for(imsg::Format::Html), "html", "format: extension");
+    check_eq(imsg::extension_for(imsg::Format::Android), "xml", "format: android extension");
 }
 
 void test_text_export() {
@@ -503,6 +505,30 @@ void test_markdown_export() {
     check(contains(md, "**"), "md: bold sender");
 }
 
+void test_android_export() {
+    imsg::Format f;
+    check(imsg::parse_format("android", f) && f == imsg::Format::Android,
+          "android: parse android");
+    check(imsg::parse_format("xml", f) && f == imsg::Format::Android,
+          "android: parse xml alias");
+    check_eq(imsg::extension_for(imsg::Format::Android), "xml", "android: extension");
+
+    std::string xml = imsg::render_android(make_chat());
+    check(contains(xml, "<smses"), "android: smses element");
+    check(contains(xml, "count=\"2\""), "android: count of text messages (attachment skipped)");
+    check(contains(xml, "<sms "), "android: sms row");
+    check(contains(xml, "address="), "android: address attribute");
+    check(contains(xml, "Hello there"), "android: received body");
+    check(contains(xml, "General Kenobi"), "android: sent body");
+    // m2 is from me -> type 2; m1 is received -> type 1.
+    check(contains(xml, "type=\"2\""), "android: from-me type 2");
+    check(contains(xml, "type=\"1\""), "android: received type 1");
+    // m1's date is 2024-01-01 12:00:00 UTC == epoch 1704110400 s -> ms.
+    check(contains(xml, "date=\"1704110400000\""), "android: epoch milliseconds");
+    // The received message's address is the other party's handle.
+    check(contains(xml, "address=\"+15551234567\""), "android: handle address");
+}
+
 void test_chat_title() {
     imsg::Chat c;
     c.rowid = 7;
@@ -542,6 +568,7 @@ int main() {
     test_attachment_embed_html();
     test_inline_media_fallback();
     test_markdown_export();
+    test_android_export();
     test_chat_title();
 
     if (g_failures == 0) {

@@ -202,7 +202,7 @@ MainWindow::MainWindow()
     auto* outputPage = new QWidget;
     auto* outForm = new QFormLayout(outputPage);
     format_ = new QComboBox;
-    format_->addItems({"txt", "md", "html", "json", "pdf"});
+    format_->addItems({"txt", "md", "html", "json", "pdf", "android"});
     format_->setCurrentText("html");
     outForm->addRow("Format:", format_);
 
