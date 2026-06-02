@@ -146,7 +146,7 @@ void GoogleContacts::fetchPage(const QString& pageToken) {
     emit status("Downloading contacts…");
     QUrl url(kPeople);
     QUrlQuery qy;
-    qy.addQueryItem("personFields", "names,phoneNumbers,emailAddresses");
+    qy.addQueryItem("personFields", "names,phoneNumbers,emailAddresses,photos");
     qy.addQueryItem("pageSize", "1000");
     if (!pageToken.isEmpty()) qy.addQueryItem("pageToken", pageToken);
     url.setQuery(qy);
@@ -174,13 +174,22 @@ void GoogleContacts::fetchPage(const QString& pageToken) {
             const std::string name =
                 names.first().toObject().value("displayName").toString().toStdString();
             if (name.empty()) continue;
+            // First non-default (non-silhouette) photo URL, if any. Stored as an
+            // https URL — it shows when the export is viewed online.
+            std::string photo;
+            for (const QJsonValue& pv2 : person.value("photos").toArray()) {
+                const QJsonObject po = pv2.toObject();
+                if (po.value("default").toBool()) continue;  // skip the gray silhouette
+                photo = po.value("url").toString().toStdString();
+                if (!photo.empty()) break;
+            }
             for (const QJsonValue& ph : person.value("phoneNumbers").toArray()) {
                 const std::string v = ph.toObject().value("value").toString().toStdString();
-                if (!v.empty()) { store.upsert(v, name, "google"); ++imported_; }
+                if (!v.empty()) { store.upsert(v, name, "google", photo); ++imported_; }
             }
             for (const QJsonValue& em : person.value("emailAddresses").toArray()) {
                 const std::string v = em.toObject().value("value").toString().toStdString();
-                if (!v.empty()) { store.upsert(v, name, "google"); ++imported_; }
+                if (!v.empty()) { store.upsert(v, name, "google", photo); ++imported_; }
             }
         }
         const QString next = root.value("nextPageToken").toString();

@@ -428,10 +428,13 @@ bool is_single_url(const std::string& text) {
     return t.find_first_of(" \t\r\n") == std::string::npos;
 }
 
-// A small circular monogram avatar (initials over a stable per-name color),
-// shown beside each message like an iOS contact bubble. Self-contained — no
-// photo source needed.
-std::string avatar_html(const std::string& name) {
+// A small circular avatar beside each message, iOS-style: the contact's photo
+// (a data URI from the contact source) when available, else a monogram of
+// initials over a stable per-name color.
+std::string avatar_html(const std::string& name, const std::string& photo_uri) {
+    if (!photo_uri.empty())
+        return "<span class=\"avatar\"><img loading=\"lazy\" alt=\"\" src=\"" +
+               photo_uri + "\"></span>";
     std::string initials;
     bool boundary = true;
     for (unsigned char c : name) {
@@ -467,7 +470,7 @@ std::string html_conversation(const Chat& chat) {
     for (const Message& m : chat.messages) {
         const char* side = m.is_from_me ? "me" : "them";
         os << "<div class=\"msg " << side << "\">"
-           << "<div class=\"info\">" << avatar_html(m.sender) << "<span>"
+           << "<div class=\"info\">" << avatar_html(m.sender, m.avatar_uri) << "<span>"
            << html_escape(m.sender) << " &middot; " << html_escape(format_when(m))
            << "</span></div>"
            << "<div class=\"bubble\">";

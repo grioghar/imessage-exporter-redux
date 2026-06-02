@@ -24,11 +24,19 @@ class ContactBook {
     // Returns the display name for `handle`, or "" if none is known.
     std::string name_for(const std::string& handle) const;
 
-    bool empty() const { return by_key_.empty(); }
+    // Associates a photo (a "data:image/...;base64,..." URI) with `handle`. The
+    // first non-empty photo for a key wins.
+    void add_photo(const std::string& handle, const std::string& data_uri);
+
+    // Returns the photo data URI for `handle`, or "" if none is known.
+    std::string photo_for(const std::string& handle) const;
+
+    bool empty() const { return by_key_.empty() && photo_by_key_.empty(); }
     std::size_t size() const { return by_key_.size(); }
 
    private:
     std::unordered_map<std::string, std::string> by_key_;
+    std::unordered_map<std::string, std::string> photo_by_key_;
 };
 
 }  // namespace imsg

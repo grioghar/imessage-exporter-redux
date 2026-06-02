@@ -262,6 +262,7 @@ void MessagesDatabase::load_messages(Chat& chat) {
                            ? me_label_
                            : (!name.empty() ? name
                                             : (handle.empty() ? "Unknown" : handle));
+            if (contacts_ && !m.is_from_me) m.avatar_uri = contacts_->photo_for(handle);
 
             m.has_chat = true;
             m.chat_id = chat.rowid;
