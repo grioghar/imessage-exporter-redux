@@ -53,6 +53,11 @@ std::string media_embeds_html(const std::string& text);
 using LinkPreviewFn = std::function<std::string(const std::string& url)>;
 void set_link_preview_resolver(LinkPreviewFn fn);
 
+// Selects the visual theme for HTML export (built-ins in theme.hpp; default
+// "ios"). An unknown name falls back to "ios". Install before export and leave
+// set for the run; same contract as set_link_preview_resolver above.
+void set_html_theme(const std::string& name);
+
 // Dispatches to the renderer for `fmt`.
 std::string render(const Chat& chat, Format fmt);
 

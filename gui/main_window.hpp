@@ -104,6 +104,7 @@ class MainWindow : public QWidget {
 
     // Options.
     QComboBox* format_ = nullptr;
+    QComboBox* themeCombo_ = nullptr;  // HTML/PDF visual theme (imsg::theme_names)
     QLineEdit* outputDir_ = nullptr;
     QLineEdit* meLabel_ = nullptr;
     QDateEdit* since_ = nullptr;   // at minimumDate ("any start") = no lower bound

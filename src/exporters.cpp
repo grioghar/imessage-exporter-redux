@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "imsg/theme.hpp"
 #include "imsg/time_util.hpp"
 
 namespace imsg {
@@ -16,6 +17,15 @@ namespace imsg {
 static LinkPreviewFn g_link_preview;
 
 void set_link_preview_resolver(LinkPreviewFn fn) { g_link_preview = std::move(fn); }
+
+// Selected HTML export theme (see theme.hpp). Set by the front-end before
+// export; html_head() emits this theme's CSS. Same install-before-export
+// contract as the link-preview resolver above (not safe to change mid-render).
+static std::string g_html_theme = "ios";
+
+void set_html_theme(const std::string& name) {
+    g_html_theme = is_theme(name) ? name : "ios";
+}
 
 namespace {
 
@@ -131,75 +141,6 @@ std::string md_escape(const std::string& s) {
     }
     return out;
 }
-
-const char* kHtmlStyle =
-    "body{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;"
-    "background:#f0f0f3;margin:0;padding:2rem;color:#1d1d1f}"
-    ".conversation{max-width:720px;margin:0 auto}"
-    "header h1{margin:0 0 .25rem;font-size:1.4rem}"
-    "header .meta{color:#6e6e73;font-size:.85rem;margin-bottom:1.5rem}"
-    ".msg{margin:.35rem 0;display:flex;flex-direction:column}"
-    ".msg .bubble{display:inline-block;padding:.5rem .75rem;border-radius:1rem;"
-    "max-width:75%;word-wrap:break-word;white-space:pre-wrap}"
-    ".msg.them{align-items:flex-start}"
-    ".msg.them .bubble{background:#e5e5ea;color:#000;border-bottom-left-radius:.25rem}"
-    ".msg.me{align-items:flex-end}"
-    ".msg.me .bubble{background:#0b84ff;color:#fff;border-bottom-right-radius:.25rem}"
-    ".msg .info{font-size:.7rem;color:#8e8e93;margin:0 .5rem .1rem;"
-    "display:flex;align-items:center}"
-    ".msg.me .info{flex-direction:row-reverse}"
-    ".avatar{display:inline-flex;align-items:center;justify-content:center;"
-    "width:22px;height:22px;border-radius:50%;color:#fff;font-size:.62rem;"
-    "font-weight:700;margin:0 .35rem;flex:0 0 auto;text-transform:uppercase;"
-    "overflow:hidden;background-size:cover;background-position:center}"
-    ".avatar img{width:100%;height:100%;object-fit:cover}"
-    // Per-conversation contact header (1:1 card or group card). Kept whole on a
-    // PDF page so the heading never splits from its first messages.
-    ".chat-header{page-break-inside:avoid;break-inside:avoid}"
-    ".contact-card{display:flex;gap:.8rem;align-items:center}"
-    ".contact-info{min-width:0}"
-    ".contact-name{font-size:1.3rem;font-weight:600}"
-    ".contact-handle{color:#6e6e73;font-size:.85rem}"
-    ".avatar-stack{display:flex}"
-    ".avatar.avatar-lg{width:64px;height:64px;font-size:1.4rem}"
-    ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}"
-    "img.attachment,video.attachment{max-width:100%;border-radius:.5rem;"
-    "display:block;font-style:normal}"
-    "a.attachment{color:inherit}.bubble a{color:inherit;text-decoration:underline}"
-    ".embed{width:100%;max-width:560px;height:315px;border:0;border-radius:.6rem;"
-    "margin-top:.4rem;display:block}"
-    // YouTube hero card: 16:9 thumbnail + centered play button (click to play).
-    ".ytcard{position:relative;display:block;max-width:560px;margin-top:.4rem}"
-    ".ytcard .ytthumb{height:auto;aspect-ratio:16/9;object-fit:cover;margin-top:0}"
-    ".ytplay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);"
-    "font-size:3.2rem;line-height:1;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.6);"
-    "pointer-events:none}"
-    // Keep messages/media from splitting across PDF pages.
-    ".msg,.embed,.ytcard,img.attachment,video.attachment,.ogcard,.linkcard{"
-    "page-break-inside:avoid;break-inside:avoid}"
-    ".linkcard{display:flex;align-items:center;gap:.6rem;max-width:560px;margin-top:"
-    ".4rem;padding:.5rem .7rem;border:1px solid rgba(0,0,0,.12);border-radius:.6rem;"
-    "background:#fff;text-decoration:none!important;color:#1d1d1f}"
-    ".linkcard-icon{width:32px;height:32px;border-radius:.3rem;flex:0 0 auto}"
-    ".linkcard-body{display:flex;flex-direction:column;min-width:0}"
-    ".linkcard-host{font-weight:600;font-size:.9rem}"
-    ".linkcard-url{color:#6e6e73;font-size:.75rem;overflow:hidden;"
-    "text-overflow:ellipsis;white-space:nowrap}"
-    // Open Graph rich card (hero image + title + description), used when a link
-    // preview resolver supplies fetched metadata. Falls back to .linkcard above.
-    ".ogcard{display:block;max-width:560px;margin-top:.4rem;border:1px solid "
-    "rgba(0,0,0,.12);border-radius:.6rem;overflow:hidden;background:#fff;"
-    "text-decoration:none!important;color:#1d1d1f}"
-    ".ogcard-img{display:block;width:100%;max-height:300px;object-fit:cover}"
-    ".ogcard-body{padding:.55rem .75rem}"
-    ".ogcard-title{font-weight:600;font-size:.95rem;line-height:1.25;"
-    "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"
-    "overflow:hidden}"
-    ".ogcard-desc{color:#3a3a3c;font-size:.8rem;margin-top:.2rem;"
-    "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"
-    "overflow:hidden}"
-    ".ogcard-host{color:#6e6e73;font-size:.72rem;margin-top:.3rem;"
-    "text-transform:uppercase;letter-spacing:.02em}";
 
 }  // namespace
 
@@ -646,7 +587,7 @@ std::string html_head(const std::string& title) {
        << "<meta charset=\"utf-8\">\n"
        << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
        << "<title>" << html_escape(title) << "</title>\n"
-       << "<style>" << kHtmlStyle << "</style>\n"
+       << "<style>" << theme_css(g_html_theme) << "</style>\n"
        // Click a YouTube hero card to swap its thumbnail for an inline player.
        // No external scripts; ignored by PDF/no-JS viewers (thumbnail stays).
        << "<script>document.addEventListener('click',function(e){"

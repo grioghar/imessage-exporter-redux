@@ -244,6 +244,10 @@ ExportSummary export_database(const std::string& db_path,
                               const ExportOptions& opts) {
     ExportSummary summary;
     try {
+        // Arm the selected HTML theme (no-op for non-HTML formats; an unknown
+        // name falls back to "ios"). Mirrors the link-preview install contract.
+        set_html_theme(opts.html_theme);
+
         // Resolve handles to names up front, if requested.
         ContactBook contacts;
         if (!opts.contacts_path.empty())
