@@ -397,6 +397,61 @@ MainWindow::MainWindow()
             statsCover_->setChecked(true);
     });
 
+    // -- Timeline tab --
+    auto* tlTab = new QWidget;
+    auto* tlLay = new QVBoxLayout(tlTab);
+    auto* tlGroup = new QGroupBox("Enable timeline");
+    tlGroup->setCheckable(true);
+    tlGroup->setChecked(false);  // default off; loadSettings() restores it
+    auto* tlGroupLay = new QVBoxLayout(tlGroup);
+
+    timelinePage_ = new QCheckBox("Write standalone timeline page (00-timeline.html)");
+    timelinePage_->setChecked(true);
+    tlGroupLay->addWidget(timelinePage_);
+
+    auto* tlSelRow = new QHBoxLayout;
+    auto* tlSelAll  = new QPushButton("Select All");
+    auto* tlSelNone = new QPushButton("Unselect All");
+    tlSelRow->addWidget(tlSelAll);
+    tlSelRow->addWidget(tlSelNone);
+    tlSelRow->addStretch();
+    tlGroupLay->addLayout(tlSelRow);
+
+    tlGroupLay->addWidget(new QLabel("<b>Display</b>"));
+    timelinePhotos_   = new QCheckBox("Show contact photos in lane headers");
+    timelineMePhoto_  = new QCheckBox("Use my own contact photo for the Me lane");
+    timelinePreviews_ = new QCheckBox("Show message preview on hover");
+    for (auto* cb : {timelinePhotos_, timelineMePhoto_, timelinePreviews_}) {
+        cb->setChecked(true);
+        tlGroupLay->addWidget(cb);
+    }
+
+    auto* densRow = new QHBoxLayout;
+    densRow->addWidget(new QLabel("Time grouping:"));
+    timelineDensity_ = new QComboBox;
+    timelineDensity_->addItems({"Auto", "By month", "By week", "By day", "By hour"});
+    densRow->addWidget(timelineDensity_);
+    densRow->addStretch();
+    tlGroupLay->addLayout(densRow);
+
+    tlLay->addWidget(tlGroup);
+    tlLay->addStretch();
+    prefsTabs_->addTab(tlTab, "Timeline");
+
+    QList<QCheckBox*> tlBoxes = {timelinePage_, timelinePhotos_, timelineMePhoto_,
+                                 timelinePreviews_};
+    connect(tlSelAll, &QPushButton::clicked, [=] {
+        for (auto* cb : tlBoxes) cb->setChecked(true);
+    });
+    connect(tlSelNone, &QPushButton::clicked, [=] {
+        for (auto* cb : tlBoxes) cb->setChecked(false);
+    });
+    connect(tlGroup, &QGroupBox::toggled, [=](bool on) {
+        for (auto* cb : tlBoxes) cb->setEnabled(on);
+        timelineDensity_->setEnabled(on);
+        if (on && !timelinePage_->isChecked()) timelinePage_->setChecked(true);
+    });
+
     // -- Logging tab --
     auto* logPage = new QWidget;
     auto* lForm = new QFormLayout(logPage);
@@ -656,6 +711,17 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.stats_top_texters      = statsTopTexters_ && statsTopTexters_->isChecked();
     opts.stats_word_stats       = statsWordStats_  && statsWordStats_->isChecked();
     opts.stats_fun_facts        = statsFunFacts_   && statsFunFacts_->isChecked();
+    opts.timeline_page     = timelinePage_     && timelinePage_->isChecked();
+    opts.timeline_photos   = timelinePhotos_   && timelinePhotos_->isChecked();
+    opts.timeline_me_photo = timelineMePhoto_  && timelineMePhoto_->isChecked();
+    opts.timeline_previews = timelinePreviews_ && timelinePreviews_->isChecked();
+    if (timelineDensity_) {
+        QString d = timelineDensity_->currentText().toLower();
+        opts.timeline_density = d.contains("month") ? "month"
+                              : d.contains("week")  ? "week"
+                              : d.contains("day")   ? "day"
+                              : d.contains("hour")  ? "hour" : "auto";
+    }
     opts.copy_attachments = copyAttachments_->isChecked();
     opts.embed_attachments = embedAttachments_->isChecked();
     opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
@@ -1066,6 +1132,12 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/statsTopTexters", statsTopTexters_->isChecked());
     s.setValue("ui/statsWordStats",  statsWordStats_->isChecked());
     s.setValue("ui/statsFunFacts",   statsFunFacts_->isChecked());
+    s.setValue("ui/timelinePage",     timelinePage_     && timelinePage_->isChecked());
+    s.setValue("ui/timelinePhotos",   timelinePhotos_   && timelinePhotos_->isChecked());
+    s.setValue("ui/timelineMePhoto",  timelineMePhoto_  && timelineMePhoto_->isChecked());
+    s.setValue("ui/timelinePreviews", timelinePreviews_ && timelinePreviews_->isChecked());
+    s.setValue("ui/timelineDensity",  timelineDensity_ ? timelineDensity_->currentText()
+                                                       : "Auto");
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
@@ -1106,6 +1178,14 @@ void MainWindow::loadSettings() {
     if (statsTopTexters_) statsTopTexters_->setChecked(s.value("ui/statsTopTexters",true).toBool());
     if (statsWordStats_)  statsWordStats_->setChecked(s.value("ui/statsWordStats", true).toBool());
     if (statsFunFacts_)   statsFunFacts_->setChecked(s.value("ui/statsFunFacts",   true).toBool());
+    if (timelinePage_)     timelinePage_->setChecked(s.value("ui/timelinePage",     false).toBool());
+    if (timelinePhotos_)   timelinePhotos_->setChecked(s.value("ui/timelinePhotos",   true).toBool());
+    if (timelineMePhoto_)  timelineMePhoto_->setChecked(s.value("ui/timelineMePhoto",  true).toBool());
+    if (timelinePreviews_) timelinePreviews_->setChecked(s.value("ui/timelinePreviews", true).toBool());
+    if (timelineDensity_) {
+        int idx = timelineDensity_->findText(s.value("ui/timelineDensity", "Auto").toString());
+        if (idx >= 0) timelineDensity_->setCurrentIndex(idx);
+    }
     copyAttachments_->setChecked(s.value("ui/copy", true).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
