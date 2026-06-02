@@ -316,6 +316,23 @@ database** — the app instead imports a `chat.db` the user supplies. See
 [`docs/IOS.md`](docs/IOS.md) for the full guide (constraints, build, and UI
 wiring). Building an iOS app requires a Mac with Xcode.
 
+## TODO / Roadmap (0.6.0 ideas)
+
+A parking lot for larger ideas targeted at the next major version, **0.6.0**:
+
+- **Export themes.** Pluggable visual themes for the HTML export — e.g. **LCARS**,
+  **The Matrix**, classic **iOS**, **dot-matrix**, **ATARI 8-bit** — with an easy
+  way to register a new theme (a CSS bundle + small render hooks). Especially fun
+  for group chats. Goal: drop-in theme files, no engine changes per theme.
+- **Statistics cover page.** An analysis page prepended to an export with as many
+  and as varied relationships as possible: messages over time/day-of-week/hour,
+  per-person volumes and response times, streaks, busiest days, word/emoji stats,
+  and playful correlations with date/weather/location and random trivia. Make it
+  fun, not just tables.
+- **Inactive-contacts auto-group.** Automatically bucket numbers/emails not heard
+  from in over a configurable period into a separate group that is **excluded
+  from the People list** (and optionally from default exports).
+
 ## Disclaimer
 
 This tool is for exporting **your own** message data. Respect the privacy of the

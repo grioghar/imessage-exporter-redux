@@ -238,6 +238,7 @@ void MessagesDatabase::load_messages(Chat& chat) {
                 if (blob && n > 0)
                     m.text = decode_attributed_body(blob, static_cast<std::size_t>(n));
             }
+            m.text = sanitize_text(m.text);  // drop object-replacement / control noise
 
             std::time_t when;
             if (apple_time_to_epoch(sqlite3_column_int64(stmt, 4), when)) {
