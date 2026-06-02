@@ -56,6 +56,7 @@
 #include "imsg/log.hpp"
 #include "imsg/build_stamp.hpp"
 #include "imsg/time_util.hpp"
+#include "imsg/vcard.hpp"
 #include "imsg/version.hpp"
 #include "google_auth.hpp"
 #include "link_preview.hpp"
@@ -322,30 +323,6 @@ MainWindow::MainWindow()
     });
     prefLayout->addWidget(prefButtons);
 
-    // --- Preferences dropdown in the top tab bar (top-right corner) ----------
-    auto* prefsMenu = new QMenu(this);
-    prefsMenu->addAction("Preferences…", this, &MainWindow::showPreferences);
-    prefsMenu->addAction("Cloud accounts…", this, [this] {
-        if (prefsTabs_) prefsTabs_->setCurrentIndex(0);  // Cloud Accounts is tab 0
-        showPreferences();
-    });
-    prefsMenu->addAction("Contacts…", this, [this] {
-        if (prefsTabs_) prefsTabs_->setCurrentIndex(1);
-        showPreferences();
-    });
-#ifdef Q_OS_MACOS
-    prefsMenu->addSeparator();
-    prefsMenu->addAction("Fix Full Disk Access…", this,
-                         &MainWindow::showFullDiskAccessHelp);
-#endif
-    auto* prefsButton = new QToolButton;
-    prefsButton->setText("⚙ Preferences ");
-    prefsButton->setMenu(prefsMenu);
-    prefsButton->setPopupMode(QToolButton::InstantPopup);
-    prefsButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    prefsButton->setAutoRaise(true);
-    tabs_->setCornerWidget(prefsButton, Qt::TopRightCorner);
-
     // --- Menu bar (Help + Settings) -----------------------------------------
     auto* menuBar = new QMenuBar;
     QMenu* settingsMenu = menuBar->addMenu("&Settings");
@@ -389,7 +366,9 @@ MainWindow::MainWindow()
     // message on the left and an export progress bar on the right.
     status_ = new QLabel("Ready.");
     progress_ = new QProgressBar;
-    progress_->setMaximumWidth(180);
+    progress_->setMinimumWidth(240);
+    progress_->setTextVisible(true);
+    progress_->setFormat("%p%");  // show the percentage done
     progress_->setVisible(false);
     statusBar_ = new QStatusBar;
     statusBar_->setSizeGripEnabled(false);
@@ -663,6 +642,10 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
         default:
             break;
     }
+    // Always merge the saved store (downloaded Google + iCloud contacts) on top
+    // of whatever source is selected, so the address books are used together
+    // rather than either/or. (No-op when the store is empty.)
+    if (contacts_->currentIndex() != CtNone) opts.use_contact_store = true;
 
     for (const QString& p : selectedPeople_)
         opts.only_participants.push_back(p.toStdString());
@@ -829,7 +812,11 @@ void MainWindow::startExportResuming(bool resume) {
 }
 
 void MainWindow::onProgress(int done, int total) {
-    status_->setText(QString("Exporting… %1 of %2 conversations").arg(done).arg(total));
+    const int pct = total > 0 ? static_cast<int>(static_cast<long long>(done) * 100 / total) : 0;
+    status_->setText(total > 0
+                         ? QString("Exporting… %1% (%2 of %3 conversations)")
+                               .arg(pct).arg(done).arg(total)
+                         : QString("Exporting… %1 conversations").arg(done));
     if (progress_) {
         progress_->setRange(0, total > 0 ? total : 0);  // 0,0 stays indeterminate
         progress_->setValue(done);
@@ -936,6 +923,9 @@ void MainWindow::exportFinished() {
         lastOutputDir_ = pdfRealOut_;
         status_->setText(QString("Exported %1 PDF(s).").arg(made));
         openBtn_->setEnabled(true);
+        QMessageBox::information(
+            this, "Export complete",
+            QString("Export complete — %1 PDF(s) saved to:\n%2").arg(made).arg(pdfRealOut_));
         maybeUploadToDrive(pdfRealOut_);
         return;
     }
@@ -946,6 +936,8 @@ void MainWindow::exportFinished() {
     msg += ".";
     status_->setText(msg);
     openBtn_->setEnabled(true);
+    QMessageBox::information(this, "Export complete",
+                            msg + "\n\nSaved to:\n" + lastOutputDir_);
     maybeUploadToDrive(lastOutputDir_);
 }
 
@@ -1256,24 +1248,27 @@ void MainWindow::icloudFinished() {
                 "and choose \"Contacts file…\".");
         return;
     }
-    if (!tempDir_.isValid()) {
-        status_->setText("Could not create a temporary file for the contacts.");
-        return;
-    }
-    const QString path = tempDir_.filePath("icloud-contacts.vcf");
-    QFile out(path);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    // Merge iCloud contacts into the shared store (alongside Google), with
+    // photos, so both address books are used together rather than either/or.
+    imsg::ContactStore store(imsg::default_contact_store_path());
+    int n = 0;
+    if (store.open()) {
+        for (const imsg::VCardEntry& e :
+             imsg::parse_vcard_entries(result.vcards.toStdString())) {
+            store.upsert(e.handle, e.name, "icloud", e.photo);
+            ++n;
+        }
+    } else {
         QMessageBox::warning(this, "iCloud import",
-                             "Could not save the imported contacts.");
+                             "Could not open the saved contacts database.");
         return;
     }
-    out.write(result.vcards.toUtf8());
-    out.close();
-
-    contacts_->setCurrentIndex(CtFile);  // "Contacts file…"
-    contactsPath_->setText(path);
+    contacts_->setCurrentIndex(CtStore);  // the merged "Saved contacts database"
     onContactsChanged();
-    status_->setText("Imported iCloud contacts; they will be used for name resolution.");
+    status_->setText(QString("Imported %1 iCloud contact entr%2 into the saved "
+                             "database (merged with Google).")
+                         .arg(n)
+                         .arg(n == 1 ? "y" : "ies"));
 }
 
 void MainWindow::showHowToGetData() {

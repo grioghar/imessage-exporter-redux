@@ -115,7 +115,8 @@ std::string name_from_n(const std::string& value) {
 
 }  // namespace
 
-void parse_vcards(const std::string& text, ContactBook& book) {
+std::vector<VCardEntry> parse_vcard_entries(const std::string& text) {
+    std::vector<VCardEntry> entries;
     std::string fn, n_name, org, photo;
     std::vector<std::string> handles;  // TEL + EMAIL values for the current card
     bool in_card = false;
@@ -139,10 +140,9 @@ void parse_vcards(const std::string& text, ContactBook& book) {
         } else if (name == "END") {
             if (in_card) {
                 std::string display = !fn.empty() ? fn : (!n_name.empty() ? n_name : org);
-                for (const std::string& h : handles) {
-                    if (!display.empty()) book.add(h, display);
-                    if (!photo.empty()) book.add_photo(h, photo);
-                }
+                if (!display.empty())
+                    for (const std::string& h : handles)
+                        entries.push_back({h, display, photo});
             }
             in_card = false;
         } else if (!in_card) {
@@ -160,6 +160,14 @@ void parse_vcards(const std::string& text, ContactBook& book) {
         } else if (name == "PHOTO") {
             if (photo.empty()) photo = photo_data_uri(line);  // first usable photo
         }
+    }
+    return entries;
+}
+
+void parse_vcards(const std::string& text, ContactBook& book) {
+    for (const VCardEntry& e : parse_vcard_entries(text)) {
+        book.add(e.handle, e.name);
+        if (!e.photo.empty()) book.add_photo(e.handle, e.photo);
     }
 }
 

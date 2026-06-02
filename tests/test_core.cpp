@@ -410,6 +410,15 @@ void test_vcard_photo() {
         "BEGIN:VCARD\nFN:Y\nTEL:5550000000\nPHOTO;VALUE=uri:https://x/p.jpg\nEND:VCARD\n",
         b3);
     check(b3.photo_for("5550000000").empty(), "vcard: URI PHOTO is skipped");
+
+    // The entries API (used to merge iCloud into the store) carries name+photo.
+    const auto entries = imsg::parse_vcard_entries(
+        "BEGIN:VCARD\nFN:Jane\nTEL:+15551234567\n"
+        "PHOTO;ENCODING=b;TYPE=JPEG:QUJD\nEND:VCARD\n");
+    check(entries.size() == 1 && entries[0].handle == "+15551234567" &&
+              entries[0].name == "Jane" &&
+              entries[0].photo == "data:image/jpeg;base64,QUJD",
+          "vcard: parse_vcard_entries yields handle + name + photo");
 }
 
 void test_avatar_photo_render() {
