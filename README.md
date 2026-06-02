@@ -327,8 +327,10 @@ See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full schema reference.
 
 ## Roadmap
 
-The 0.6.0 features (themes, statistics, inactive-contact filtering) and the 0.6.x
-bug-fix cycle all shipped. Below is the planned scope for **0.7.0**:
+The 0.6.0-0.6.1 cycle shipped themes, statistics, inactive-contact filtering,
+per-conversation stats, an interactive timeline page, SMS/RCS green-text style,
+and the granular Statistics and Timeline preferences tabs. Below is the planned
+scope for 0.7.0:
 
 - **AI relationship analysis engine.** Analyse the patterns and dynamics within
   conversations — sentiment arcs, topic clustering, response-time graphs, dominant
@@ -353,6 +355,15 @@ bug-fix cycle all shipped. Below is the planned scope for **0.7.0**:
   backup's SQLite blob, write the HTML, move on. Lets you export a 250 GB message
   history to an external drive without the laptop ever holding more than one
   conversation's worth of data.
+- **Location context on the timeline.** Correlate message timestamps with location
+  records from three sources the tool can already reach: the macOS Photos library
+  (Photos.sqlite, same Full Disk Access permission already required), the
+  com.apple.routined/Local.sqlite significant-location database inside an iPhone
+  backup (which the tool already parses), and a Google Takeout Records.json export
+  (parseable with the Google OAuth infrastructure already built). The result: each
+  message on the timeline can optionally show where you were when you sent it.
+  Waze and the real-time Google Maps Timeline API have no public endpoint; the
+  Takeout JSON is the only Google export path.
 
 Suggestions and votes welcome — open an issue or add a 👍 to an existing one.
 
