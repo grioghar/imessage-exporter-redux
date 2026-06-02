@@ -8,10 +8,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # So the static core/db libraries link cleanly into the (PIE) Qt GUI executable.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Build timestamp (DDMMYYHHMM, 24h) appended to the displayed version. Generated
+# Build timestamp (YYYYMMDDHHMM, 24h) appended to the displayed version. Generated
 # into the build tree; only the CLI/GUI consume it (the core/bridge use the bare
 # IMSG_VERSION so the SwiftPM/iOS build needs no generated header).
-string(TIMESTAMP IMSG_BUILD_STAMP "%d%m%y%H%M")
+string(TIMESTAMP IMSG_BUILD_STAMP "%Y%m%d%H%M")  # YYYYMMDDHHMM, 24h
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.hpp.in
                ${CMAKE_BINARY_DIR}/generated/imsg/build_stamp.hpp @ONLY)
 
@@ -125,7 +125,7 @@ endif()
 # Built in CI against the distro's own Qt so dependencies resolve via the system
 # package manager. Run from the build dir: `cpack -G DEB` or `cpack -G RPM`.
 set(CPACK_PACKAGE_NAME "imessage-exporter")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}.${IMSG_BUILD_STAMP}")
 set(CPACK_PACKAGE_CONTACT "imessage-exporter maintainers")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
   "Export macOS iMessage/SMS history to TXT, JSON, or HTML")
