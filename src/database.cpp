@@ -151,6 +151,11 @@ std::vector<Chat> MessagesDatabase::load_chat_index() {
                     std::string name = contacts_ ? contacts_->name_for(handle) : "";
                     chats[it->second].participants.push_back(
                         name.empty() ? handle : name);
+                    // Carry handle + photo too, so the HTML header can draw a
+                    // per-person avatar (the display string alone can't).
+                    chats[it->second].participant_details.push_back(
+                        Participant{handle, name,
+                                    contacts_ ? contacts_->photo_for(handle) : ""});
                 }
             }
             sqlite3_finalize(stmt);

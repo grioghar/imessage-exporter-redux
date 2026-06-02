@@ -148,6 +148,15 @@ const char* kHtmlStyle =
     "font-weight:700;margin:0 .35rem;flex:0 0 auto;text-transform:uppercase;"
     "overflow:hidden;background-size:cover;background-position:center}"
     ".avatar img{width:100%;height:100%;object-fit:cover}"
+    // Per-conversation contact header (1:1 card or group card). Kept whole on a
+    // PDF page so the heading never splits from its first messages.
+    ".chat-header{page-break-inside:avoid;break-inside:avoid}"
+    ".contact-card{display:flex;gap:.8rem;align-items:center}"
+    ".contact-info{min-width:0}"
+    ".contact-name{font-size:1.3rem;font-weight:600}"
+    ".contact-handle{color:#6e6e73;font-size:.85rem}"
+    ".avatar-stack{display:flex}"
+    ".avatar.avatar-lg{width:64px;height:64px;font-size:1.4rem}"
     ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}"
     "img.attachment,video.attachment{max-width:100%;border-radius:.5rem;"
     "display:block;font-style:normal}"
@@ -465,9 +474,12 @@ bool is_single_url(const std::string& text) {
 // A small circular avatar beside each message, iOS-style: the contact's photo
 // (a data URI from the contact source) when available, else a monogram of
 // initials over a stable per-name color.
-std::string avatar_html(const std::string& name, const std::string& photo_uri) {
+std::string avatar_html(const std::string& name, const std::string& photo_uri,
+                        const std::string& extra_class = "") {
+    const std::string cls =
+        extra_class.empty() ? "avatar" : "avatar " + extra_class;
     if (!photo_uri.empty())
-        return "<span class=\"avatar\"><img loading=\"lazy\" alt=\"\" src=\"" +
+        return "<span class=\"" + cls + "\"><img loading=\"lazy\" alt=\"\" src=\"" +
                photo_uri + "\"></span>";
     std::string initials;
     bool boundary = true;
@@ -485,8 +497,8 @@ std::string avatar_html(const std::string& name, const std::string& photo_uri) {
     for (unsigned char c : name) h = (h ^ c) * 16777619u;
     char color[40];
     std::snprintf(color, sizeof(color), "hsl(%u,55%%,50%%)", h % 360u);
-    return "<span class=\"avatar\" style=\"background:" + std::string(color) + "\">" +
-           html_escape(initials) + "</span>";
+    return "<span class=\"" + cls + "\" style=\"background:" + std::string(color) +
+           "\">" + html_escape(initials) + "</span>";
 }
 
 // One conversation as a self-contained <div class="conversation"> block, shared
@@ -494,8 +506,37 @@ std::string avatar_html(const std::string& name, const std::string& photo_uri) {
 std::string html_conversation(const Chat& chat) {
     std::ostringstream os;
     const std::string title = html_escape(chat.title());
-    os << "<div class=\"conversation\">\n<header>\n<h1>" << title << "</h1>\n"
-       << "<div class=\"meta\">Service: "
+    const auto& people = chat.participant_details;
+    os << "<div class=\"conversation\">\n<header class=\"chat-header\">\n";
+    if (people.size() == 1) {
+        // 1:1 chat: a large avatar beside the contact's name, with their raw
+        // handle (phone/email) on a second line.
+        const Participant& p = people[0];
+        const std::string label = p.name.empty() ? p.handle : p.name;
+        os << "<div class=\"contact-card\">"
+           << avatar_html(label.empty() ? p.handle : label, p.avatar_uri, "avatar-lg")
+           << "<div class=\"contact-info\"><div class=\"contact-name\">"
+           // `title` is already escaped; only the raw label needs escaping here.
+           << (label.empty() ? title : html_escape(label)) << "</div>";
+        if (!p.handle.empty())
+            os << "<div class=\"contact-handle\">" << html_escape(p.handle) << "</div>";
+        os << "</div></div>\n";
+    } else if (people.size() > 1) {
+        // Group chat: a row of everyone's avatars, the chat title, and the
+        // member list under a "Group chat · N people" line.
+        os << "<div class=\"contact-card\"><div class=\"avatar-stack\">";
+        for (const Participant& p : people) {
+            const std::string label = p.name.empty() ? p.handle : p.name;
+            os << avatar_html(label, p.avatar_uri, "avatar-lg");
+        }
+        os << "</div><div class=\"contact-info\"><div class=\"contact-name\">" << title
+           << "</div><div class=\"contact-handle\">Group chat &middot; " << people.size()
+           << " people</div><div class=\"contact-handle\">"
+           << html_escape(join(chat.participants, ", ")) << "</div></div></div>\n";
+    } else {
+        os << "<h1>" << title << "</h1>\n";
+    }
+    os << "<div class=\"meta\">Service: "
        << html_escape(chat.service.empty() ? "unknown" : chat.service)
        << " &middot; Participants: "
        << html_escape(chat.participants.empty() ? "unknown" : join(chat.participants, ", "))

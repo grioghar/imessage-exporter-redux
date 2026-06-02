@@ -52,6 +52,15 @@ struct Message {
     bool has_text() const;
 };
 
+// One conversation participant, resolved via contacts. Parallels `participants`
+// (the display strings) but carries the raw handle + optional photo so the HTML
+// header can render per-person avatars.
+struct Participant {
+    std::string handle;
+    std::string name;
+    std::string avatar_uri;
+};
+
 struct Chat {
     long long rowid = 0;
     std::string guid;
@@ -59,6 +68,7 @@ struct Chat {
     std::string display_name;
     std::string service;
     std::vector<std::string> participants;
+    std::vector<Participant> participant_details;
     long long message_count = 0;   // populated by the chat index; messages may be unloaded
     std::vector<Message> messages;
 

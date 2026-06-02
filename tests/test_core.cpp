@@ -457,6 +457,25 @@ void test_avatar_photo_render() {
           "avatar: contact photo rendered as <img> when present");
 }
 
+void test_contact_header() {
+    // 1:1 chat: a large avatar + the contact's name in the header.
+    imsg::Chat c;
+    c.participants = {"Jane Doe"};
+    c.participant_details = {{"+15551234567", "Jane Doe", "data:image/png;base64,AA"}};
+    const std::string h = imsg::render_html(c);
+    check(contains(h, "avatar-lg"), "header: 1:1 uses a large avatar");
+    check(contains(h, "Jane Doe"), "header: 1:1 shows the contact name");
+
+    // Group chat: a "Group chat" card instead of a single-contact header.
+    imsg::Chat g;
+    g.display_name = "Weekend Crew";
+    g.participants = {"Jane Doe", "John Roe"};
+    g.participant_details = {{"+15551234567", "Jane Doe", ""},
+                             {"+15559876543", "John Roe", ""}};
+    check(contains(imsg::render_html(g), "Group chat"),
+          "header: group chat card is shown for >1 participant");
+}
+
 void test_inline_media_fallback() {
     // The Messages DB often leaves attachment.mime_type empty; pictures/movies
     // must still inline (guessed from the file name), not degrade to bare links.
@@ -539,6 +558,7 @@ int main() {
     test_avatar_in_recap();
     test_vcard_photo();
     test_avatar_photo_render();
+    test_contact_header();
     test_attachment_embed_html();
     test_inline_media_fallback();
     test_markdown_export();
