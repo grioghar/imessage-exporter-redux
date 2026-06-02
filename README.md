@@ -345,6 +345,14 @@ bug-fix cycle all shipped. Below is the planned scope for **0.7.0**:
   opens a compose area; sending routes through the macOS Messages URL scheme
   (or AppleScript on macOS) to deliver the reply via iMessage without leaving
   the export.
+- **Low-footprint backup streaming.** For large archives (hundreds of GB on an
+  external drive or iPhone backup), process and export one conversation at a time
+  directly from the backup without ever extracting the full `sms.db` to the local
+  machine. The export engine already streams one conversation at a time in memory;
+  this extends that to the source side — read a conversation's rows from the
+  backup's SQLite blob, write the HTML, move on. Lets you export a 250 GB message
+  history to an external drive without the laptop ever holding more than one
+  conversation's worth of data.
 
 Suggestions and votes welcome — open an issue or add a 👍 to an existing one.
 
