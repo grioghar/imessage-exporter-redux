@@ -344,17 +344,25 @@ namespace {
 // no <smses> wrapper). Messages with no text are skipped; MMS/attachments are
 // out of scope for v1, so attachment-only messages produce nothing.
 std::string android_sms_rows(const Chat& chat) {
-    // The other party's handle: the chat's first participant, else its
-    // identifier. Used as `address` for messages we sent (m.sender is "Me").
-    const std::string other =
-        !chat.participants.empty() ? chat.participants.front() : chat.chat_identifier;
+    // SMS Backup & Restore keys every message in a thread by the conversation
+    // peer's RAW phone/email (Android matches the number), not a display name —
+    // so use the participant's raw handle for `address`, and the resolved name
+    // only for `contact_name`. For a 1:1 that's the single participant; fall
+    // back to the chat identifier. Group threads are MMS — out of scope here.
+    std::string peer_handle, peer_name;
+    if (chat.participant_details.size() == 1) {
+        peer_handle = chat.participant_details.front().handle;
+        peer_name = chat.participant_details.front().name;
+    }
+    if (peer_handle.empty())
+        peer_handle =
+            !chat.participants.empty() ? chat.participants.front() : chat.chat_identifier;
+    if (peer_name.empty()) peer_name = peer_handle;
+    const std::string contact = peer_name.empty() ? "(Unknown)" : peer_name;
     std::ostringstream os;
     for (const Message& m : chat.messages) {
         if (!m.has_text()) continue;  // MMS/attachment-only: not exported in v1
-        // address/contact_name come from the resolved sender (a raw handle, or a
-        // contact name when --contacts is used; the model keeps only one).
-        const std::string address = m.is_from_me ? other : m.sender;
-        const std::string contact = address.empty() ? "(Unknown)" : address;
+        const std::string& address = peer_handle;  // raw number, both directions
         const long long date_ms = m.has_date ? static_cast<long long>(m.date) * 1000LL : 0;
         os << "  <sms protocol=\"0\" address=\"" << xml_attr(address) << "\" date=\""
            << date_ms << "\" type=\"" << (m.is_from_me ? "2" : "1")
