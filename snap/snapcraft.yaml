@@ -1,6 +1,6 @@
 name: imessage-exporter
 base: core22
-version: '0.4.2'
+version: '0.5.0'
 summary: Export macOS iMessage/SMS history
 description: |
   A small, fast C++ tool with a Qt desktop UI to export a macOS Messages

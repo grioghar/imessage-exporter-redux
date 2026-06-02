@@ -2,4 +2,4 @@
 // project() VERSION in CMakeLists.txt (and the installer/man-page versions).
 #pragma once
 
-#define IMSG_VERSION "0.4.2"
+#define IMSG_VERSION "0.5.0"

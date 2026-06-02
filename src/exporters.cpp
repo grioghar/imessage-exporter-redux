@@ -1,6 +1,7 @@
 #include "imsg/exporters.hpp"
 
 #include <cctype>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -139,7 +140,14 @@ const char* kHtmlStyle =
     ".msg.them .bubble{background:#e5e5ea;color:#000;border-bottom-left-radius:.25rem}"
     ".msg.me{align-items:flex-end}"
     ".msg.me .bubble{background:#0b84ff;color:#fff;border-bottom-right-radius:.25rem}"
-    ".msg .info{font-size:.7rem;color:#8e8e93;margin:0 .5rem .1rem}"
+    ".msg .info{font-size:.7rem;color:#8e8e93;margin:0 .5rem .1rem;"
+    "display:flex;align-items:center}"
+    ".msg.me .info{flex-direction:row-reverse}"
+    ".avatar{display:inline-flex;align-items:center;justify-content:center;"
+    "width:22px;height:22px;border-radius:50%;color:#fff;font-size:.62rem;"
+    "font-weight:700;margin:0 .35rem;flex:0 0 auto;text-transform:uppercase;"
+    "overflow:hidden;background-size:cover;background-position:center}"
+    ".avatar img{width:100%;height:100%;object-fit:cover}"
     ".attachment{font-style:italic;opacity:.85}.empty{font-style:italic;opacity:.7}"
     "img.attachment,video.attachment{max-width:100%;border-radius:.5rem;"
     "display:block;font-style:normal}"
@@ -420,6 +428,30 @@ bool is_single_url(const std::string& text) {
     return t.find_first_of(" \t\r\n") == std::string::npos;
 }
 
+// A small circular monogram avatar (initials over a stable per-name color),
+// shown beside each message like an iOS contact bubble. Self-contained — no
+// photo source needed.
+std::string avatar_html(const std::string& name) {
+    std::string initials;
+    bool boundary = true;
+    for (unsigned char c : name) {
+        if (std::isalnum(c)) {
+            if (boundary && initials.size() < 2)
+                initials += static_cast<char>(std::toupper(c));
+            boundary = false;
+        } else {
+            boundary = true;  // whitespace/punctuation starts a new word
+        }
+    }
+    if (initials.empty()) initials = "?";
+    unsigned h = 2166136261u;  // FNV-ish hash → stable hue per name
+    for (unsigned char c : name) h = (h ^ c) * 16777619u;
+    char color[40];
+    std::snprintf(color, sizeof(color), "hsl(%u,55%%,50%%)", h % 360u);
+    return "<span class=\"avatar\" style=\"background:" + std::string(color) + "\">" +
+           html_escape(initials) + "</span>";
+}
+
 // One conversation as a self-contained <div class="conversation"> block, shared
 // by the single-chat document and the combined multi-chat document.
 std::string html_conversation(const Chat& chat) {
@@ -435,8 +467,9 @@ std::string html_conversation(const Chat& chat) {
     for (const Message& m : chat.messages) {
         const char* side = m.is_from_me ? "me" : "them";
         os << "<div class=\"msg " << side << "\">"
-           << "<div class=\"info\">" << html_escape(m.sender) << " &middot; "
-           << html_escape(format_when(m)) << "</div>"
+           << "<div class=\"info\">" << avatar_html(m.sender) << "<span>"
+           << html_escape(m.sender) << " &middot; " << html_escape(format_when(m))
+           << "</span></div>"
            << "<div class=\"bubble\">";
         bool wrote = false;
         // Rich provider embeds (YouTube/Spotify/Vimeo iframes) and link cards for

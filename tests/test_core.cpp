@@ -383,6 +383,12 @@ void test_url_only_message_card() {
           "urlonly: mixed text keeps both the words and the card");
 }
 
+void test_avatar_in_recap() {
+    const std::string h = imsg::render_html(make_chat());
+    check(contains(h, "class=\"avatar\""), "avatar: present in the recap");
+    check(contains(h, ">M</span>"), "avatar: initials 'M' for sender \"Me\"");
+}
+
 void test_inline_media_fallback() {
     // The Messages DB often leaves attachment.mime_type empty; pictures/movies
     // must still inline (guessed from the file name), not degrade to bare links.
@@ -461,6 +467,7 @@ int main() {
     test_linkify_and_embeds();
     test_link_preview_resolver();
     test_url_only_message_card();
+    test_avatar_in_recap();
     test_attachment_embed_html();
     test_inline_media_fallback();
     test_markdown_export();
