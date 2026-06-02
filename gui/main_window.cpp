@@ -38,6 +38,7 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QtConcurrent>
@@ -226,52 +227,60 @@ MainWindow::MainWindow()
     runLayout->addWidget(logView_);
     runTabIndex_ = tabs_->addTab(runPage, "Run");
 
-    // ============ Preferences pane (persistent configuration) ============
-    // These controls hold state via QSettings (load/saveSettings) and are not
-    // part of the per-export tab flow.
+    // ============ Preferences pane (tabbed; persistent configuration) ============
+    // Cloud Accounts comes first, then the contacts source, options and logging.
+    // These controls hold state via QSettings (load/saveSettings).
     prefsDialog_ = new QDialog(this);
     prefsDialog_->setWindowTitle("Preferences");
-    auto* prefForm = new QFormLayout(prefsDialog_);
+    prefsDialog_->resize(540, 380);
+    auto* prefLayout = new QVBoxLayout(prefsDialog_);
+    prefsTabs_ = new QTabWidget;
+    prefLayout->addWidget(prefsTabs_);
 
+    // -- Cloud Accounts tab (first) --
+    auto* cloudPage = new QWidget;
+    auto* cloudForm = new QFormLayout(cloudPage);
+    icloudBtn_ = new QPushButton("Import iCloud Contacts…");
+    icloudBtn_->setToolTip("Fetch your iCloud contacts over CardDAV using an "
+                           "app-specific password.");
+    cloudForm->addRow("iCloud:", icloudBtn_);
+    googleBtn_ = new QPushButton("Connect Google Contacts…");
+    googleBtn_->setToolTip("Sign in to Google and download your contacts (enter or "
+                           "import a Google OAuth client JSON).");
+    cloudForm->addRow("Google Contacts:", googleBtn_);
+    driveBtn_ = new QPushButton;  // label set in the GoogleDrive wiring below
+    driveBtn_->setToolTip("Authorize Google Drive once; the sign-in is saved so "
+                          "future exports can upload automatically.");
+    cloudForm->addRow("Google Drive:", driveBtn_);
+    uploadDrive_ = new QCheckBox("Upload export to Drive when finished");
+    cloudForm->addRow("", uploadDrive_);
+    driveFolder_ = new QLineEdit;
+    driveFolder_->setPlaceholderText("Drive folder name (e.g. iMessage Export)");
+    cloudForm->addRow("Drive folder:", driveFolder_);
+    prefsTabs_->addTab(cloudPage, "Cloud Accounts");
+
+    // -- Contacts tab --
+    auto* contactsPage = new QWidget;
+    auto* cForm = new QFormLayout(contactsPage);
     contacts_ = new QComboBox;
     contacts_->addItem("None (show phone numbers / emails)");
     contacts_->addItem("This Mac's Contacts");
     contacts_->addItem("Contacts file (.abcddb / .vcf)…");
     contacts_->addItem("From the selected backup");
     contacts_->addItem("Saved contacts database (Google / imported)");
-    prefForm->addRow("Names:", contacts_);
-
+    cForm->addRow("Names:", contacts_);
     auto* ctRow = new QHBoxLayout;
     contactsPath_ = new QLineEdit;
     contactsPath_->setPlaceholderText("Path to .abcddb or .vcf");
     contactsBrowse_ = new QPushButton("Browse…");
     ctRow->addWidget(contactsPath_);
     ctRow->addWidget(contactsBrowse_);
-    prefForm->addRow("Contacts file:", ctRow);
+    cForm->addRow("Contacts file:", ctRow);
+    prefsTabs_->addTab(contactsPage, "Contacts");
 
-    icloudBtn_ = new QPushButton("Import iCloud Contacts…");
-    icloudBtn_->setToolTip("Fetch your iCloud contacts over CardDAV using an "
-                           "app-specific password.");
-    prefForm->addRow("", icloudBtn_);
-
-    googleBtn_ = new QPushButton("Connect Google Contacts…");
-    googleBtn_->setToolTip("Sign in to Google and download your contacts into the "
-                           "saved contacts database (needs a Google OAuth client).");
-    prefForm->addRow("", googleBtn_);
-
-    driveBtn_ = new QPushButton;  // label set in the GoogleDrive wiring below
-    driveBtn_->setToolTip("Authorize Google Drive once; the sign-in is saved so "
-                          "future exports can upload automatically.");
-    prefForm->addRow("Google Drive:", driveBtn_);
-
-    auto* driveRow = new QHBoxLayout;
-    uploadDrive_ = new QCheckBox("Upload export to Drive when finished");
-    driveFolder_ = new QLineEdit;
-    driveFolder_->setPlaceholderText("Drive folder name (e.g. iMessage Export)");
-    driveRow->addWidget(uploadDrive_);
-    driveRow->addWidget(driveFolder_);
-    prefForm->addRow("", driveRow);
-
+    // -- Export options tab --
+    auto* optsPage = new QWidget;
+    auto* oForm = new QFormLayout(optsPage);
     copyAttachments_ = new QCheckBox("Copy attachment files (needed to show pictures)");
     copyAttachments_->setChecked(true);  // so images/movies show by default
     copyAttachments_->setToolTip("Copy each conversation's pictures, movies and "
@@ -294,19 +303,48 @@ MainWindow::MainWindow()
     attCol->addWidget(embedAttachments_);
     attCol->addWidget(hiddenAttachDir_);
     attCol->addWidget(richPreviews_);
-    prefForm->addRow("Attachments:", attCol);
+    oForm->addRow("Attachments:", attCol);
+    prefsTabs_->addTab(optsPage, "Export options");
 
+    // -- Logging tab --
+    auto* logPage = new QWidget;
+    auto* lForm = new QFormLayout(logPage);
     logLevel_ = new QComboBox;
     logLevel_->addItems({"error", "warn", "info", "debug"});
     logLevel_->setCurrentText("info");
-    prefForm->addRow("Log level:", logLevel_);
+    lForm->addRow("Log level:", logLevel_);
+    prefsTabs_->addTab(logPage, "Logging");
 
     auto* prefButtons = new QDialogButtonBox(QDialogButtonBox::Close, prefsDialog_);
     connect(prefButtons, &QDialogButtonBox::rejected, prefsDialog_, [this] {
         saveSettings();
         prefsDialog_->hide();
     });
-    prefForm->addRow(prefButtons);
+    prefLayout->addWidget(prefButtons);
+
+    // --- Preferences dropdown in the top tab bar (top-right corner) ----------
+    auto* prefsMenu = new QMenu(this);
+    prefsMenu->addAction("Preferences…", this, &MainWindow::showPreferences);
+    prefsMenu->addAction("Cloud accounts…", this, [this] {
+        if (prefsTabs_) prefsTabs_->setCurrentIndex(0);  // Cloud Accounts is tab 0
+        showPreferences();
+    });
+    prefsMenu->addAction("Contacts…", this, [this] {
+        if (prefsTabs_) prefsTabs_->setCurrentIndex(1);
+        showPreferences();
+    });
+#ifdef Q_OS_MACOS
+    prefsMenu->addSeparator();
+    prefsMenu->addAction("Fix Full Disk Access…", this,
+                         &MainWindow::showFullDiskAccessHelp);
+#endif
+    auto* prefsButton = new QToolButton;
+    prefsButton->setText("⚙ Preferences ");
+    prefsButton->setMenu(prefsMenu);
+    prefsButton->setPopupMode(QToolButton::InstantPopup);
+    prefsButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    prefsButton->setAutoRaise(true);
+    tabs_->setCornerWidget(prefsButton, Qt::TopRightCorner);
 
     // --- Menu bar (Help + Settings) -----------------------------------------
     auto* menuBar = new QMenuBar;
@@ -1058,6 +1096,23 @@ void MainWindow::pickPeople() {
     }
     list->setMinimumSize(420, 320);
     layout->addWidget(list);
+
+    auto* selRow = new QHBoxLayout;
+    auto* selAllBtn = new QPushButton("Select all", &dlg);
+    auto* selNoneBtn = new QPushButton("Unselect all", &dlg);
+    connect(selAllBtn, &QPushButton::clicked, &dlg, [list] {
+        for (int i = 0; i < list->count(); ++i)
+            list->item(i)->setCheckState(Qt::Checked);
+    });
+    connect(selNoneBtn, &QPushButton::clicked, &dlg, [list] {
+        for (int i = 0; i < list->count(); ++i)
+            list->item(i)->setCheckState(Qt::Unchecked);
+    });
+    selRow->addWidget(selAllBtn);
+    selRow->addWidget(selNoneBtn);
+    selRow->addStretch();
+    layout->addLayout(selRow);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
                                          &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);

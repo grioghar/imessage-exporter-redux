@@ -132,6 +132,7 @@ class MainWindow : public QWidget {
     QPlainTextEdit* logView_ = nullptr;
     QTabWidget* tabs_ = nullptr;
     QDialog* prefsDialog_ = nullptr;   // holds the persistent configuration
+    QTabWidget* prefsTabs_ = nullptr;  // Cloud Accounts / Contacts / Options / Logging
     int runTabIndex_ = -1;             // so Export can jump to the Run tab
 
     // Cooperative export control, read on the worker thread between conversations.
