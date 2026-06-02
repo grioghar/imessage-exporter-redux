@@ -51,6 +51,62 @@ void load_query(sqlite3* db, const char* sql, ContactBook& book) {
     sqlite3_finalize(stmt);
 }
 
+std::string base64(const std::string& in) {
+    static const char* T =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((in.size() + 2) / 3 * 4);
+    std::size_t i = 0;
+    for (; i + 3 <= in.size(); i += 3) {
+        unsigned n = static_cast<unsigned char>(in[i]) << 16 |
+                     static_cast<unsigned char>(in[i + 1]) << 8 |
+                     static_cast<unsigned char>(in[i + 2]);
+        out += T[(n >> 18) & 63];
+        out += T[(n >> 12) & 63];
+        out += T[(n >> 6) & 63];
+        out += T[n & 63];
+    }
+    if (i < in.size()) {
+        unsigned n = static_cast<unsigned char>(in[i]) << 16;
+        const bool two = (i + 1 < in.size());
+        if (two) n |= static_cast<unsigned char>(in[i + 1]) << 8;
+        out += T[(n >> 18) & 63];
+        out += T[(n >> 12) & 63];
+        out += two ? T[(n >> 6) & 63] : '=';
+        out += '=';
+    }
+    return out;
+}
+
+// Image MIME from the leading magic bytes; AddressBook thumbnails are usually
+// JPEG, which is also the default.
+std::string image_mime(const std::string& b) {
+    auto u = [&](std::size_t i) { return static_cast<unsigned char>(b[i]); };
+    if (b.size() >= 3 && u(0) == 0xFF && u(1) == 0xD8 && u(2) == 0xFF) return "image/jpeg";
+    if (b.size() >= 8 && u(0) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G')
+        return "image/png";
+    if (b.size() >= 6 && b.compare(0, 4, "GIF8") == 0) return "image/gif";
+    if (b.size() >= 12 && b.compare(0, 4, "RIFF") == 0 && b.compare(8, 4, "WEBP") == 0)
+        return "image/webp";
+    return "image/jpeg";
+}
+
+// Runs a handle->photo-blob query (address col 0, image BLOB col 1) into `book`,
+// storing each as a base64 data URI. Skips gracefully if the column is absent.
+void load_photo_query(sqlite3* db, const char* sql, ContactBook& book) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        std::string addr = column_text(stmt, 0);
+        const void* blob = sqlite3_column_blob(stmt, 1);
+        int n = sqlite3_column_bytes(stmt, 1);
+        if (addr.empty() || !blob || n <= 0) continue;
+        std::string bytes(static_cast<const char*>(blob), static_cast<std::size_t>(n));
+        book.add_photo(addr, "data:" + image_mime(bytes) + ";base64," + base64(bytes));
+    }
+    sqlite3_finalize(stmt);
+}
+
 void load_one_db(const std::string& db_path, ContactBook& book) {
     std::string uri = sqlite_ro_uri(db_path);
     sqlite3* db = nullptr;
@@ -69,6 +125,18 @@ void load_one_db(const std::string& db_path, ContactBook& book) {
                "SELECT e.ZADDRESS, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION "
                "FROM ZABCDEMAILADDRESS e JOIN ZABCDRECORD r ON e.ZOWNER = r.Z_PK",
                book);
+    // Contact photos: the macOS schema keeps a thumbnail BLOB on ZABCDRECORD.
+    // (Absent column -> the query just fails to prepare and is skipped.)
+    load_photo_query(db,
+                     "SELECT p.ZFULLNUMBER, r.ZTHUMBNAILIMAGEDATA "
+                     "FROM ZABCDPHONENUMBER p JOIN ZABCDRECORD r ON p.ZOWNER = r.Z_PK "
+                     "WHERE r.ZTHUMBNAILIMAGEDATA IS NOT NULL",
+                     book);
+    load_photo_query(db,
+                     "SELECT e.ZADDRESS, r.ZTHUMBNAILIMAGEDATA "
+                     "FROM ZABCDEMAILADDRESS e JOIN ZABCDRECORD r ON e.ZOWNER = r.Z_PK "
+                     "WHERE r.ZTHUMBNAILIMAGEDATA IS NOT NULL",
+                     book);
     // iOS AddressBook.sqlitedb (as extracted from a device backup): ABPerson +
     // ABMultiValue, where property 3 = phone and 4 = email. Whichever schema is
     // absent simply fails to prepare and is skipped.
