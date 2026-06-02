@@ -3,7 +3,7 @@
 ; script, then runs: iscc installer.iss  (paths are relative to this file).
 
 #define MyAppName "iMessage Exporter"
-#define MyAppVersion "0.6.0"
+#define MyAppVersion "0.6.1"
 #define MyAppExe "imessage-exporter-gui.exe"
 #define IconFile "icon.ico"
 
