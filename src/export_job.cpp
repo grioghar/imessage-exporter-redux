@@ -14,6 +14,7 @@
 #include "imsg/contacts.hpp"
 #include "imsg/database.hpp"
 #include "imsg/log.hpp"
+#include "imsg/stats.hpp"
 #include "imsg/time_util.hpp"
 
 namespace fs = std::filesystem;
@@ -294,6 +295,7 @@ ExportSummary export_database(const std::string& db_path,
         std::unordered_map<std::string, std::string> seen_src;  // src -> rel path
         std::unordered_map<std::string, std::string> embed_cache;  // src -> data URI
         int written = 0;
+        Stats stats;  // accumulated only when opts.stats_cover (written at the end)
 
         int total = 0;
         for (const Chat& c : chats)
@@ -337,6 +339,10 @@ ExportSummary export_database(const std::string& db_path,
             db.load_messages(chat);  // bodies for just this conversation
             if (chat.messages.empty()) continue;  // e.g. filtered out by date
 
+            // Fold this conversation into the cover-page accumulator while its
+            // bodies are in memory (they're cleared at the bottom of the loop).
+            if (opts.stats_cover) stats_add(stats, chat);
+
             if (opts.copy_attachments) {
                 // Per-conversation folder named like the file stem (optionally hidden).
                 const std::string adir =
@@ -371,6 +377,20 @@ ExportSummary export_database(const std::string& db_path,
         }
 
         if (opts.combined) combined << combined_epilogue(fmt);
+
+        // Statistics cover page: a self-contained HTML recap of the whole run.
+        // Named "00-..." so it sorts to the top of the output folder. A write
+        // failure here is non-fatal — the conversations are already on disk.
+        if (opts.stats_cover) {
+            fs::path path = out_path(out_dir, "00-statistics.html");
+            std::ofstream out(path, std::ios::binary);
+            if (out) {
+                out << render_stats_html(stats);
+                log_info("wrote statistics cover page: " + path.filename().string());
+            } else {
+                log_warn("could not write statistics cover page to " + path.string());
+            }
+        }
 
         summary.ok = true;
         summary.conversations = written;
