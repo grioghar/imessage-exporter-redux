@@ -445,16 +445,32 @@ std::string link_card(const std::string& url) {
            "</span><span class=\"linkcard-url\">" + eurl + "</span></span></a>";
 }
 
-// True if `text` (ignoring surrounding whitespace) is exactly one URL. Used to
-// drop the bare link above a rich card/embed for link-only messages, the way
-// Messages shows just the preview.
-bool is_single_url(const std::string& text) {
-    const std::size_t a = text.find_first_not_of(" \t\r\n");
-    if (a == std::string::npos) return false;
-    const std::size_t b = text.find_last_not_of(" \t\r\n");
-    const std::string t = text.substr(a, b - a + 1);
-    if (t.rfind("http://", 0) != 0 && t.rfind("https://", 0) != 0) return false;
-    return t.find_first_of(" \t\r\n") == std::string::npos;
+// Returns the non-URL portions of `text`, HTML-escaped. When a message
+// contains a URL that was rendered as an embed/card we show only the
+// surrounding user-typed annotation — not the raw URL again above the card.
+// If the message is URL-only (no surrounding text) this returns an empty
+// string, meaning nothing is shown above the embed.
+static std::string text_sans_urls(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size();) {
+        if (url_starts(text, i)) {
+            i = url_end(text, i);  // skip the URL entirely
+        } else {
+            const unsigned char c = static_cast<unsigned char>(text[i]);
+            switch (c) {
+                case '&': out += "&amp;"; break;
+                case '<': out += "&lt;";  break;
+                case '>': out += "&gt;";  break;
+                default:  out += static_cast<char>(c); break;
+            }
+            ++i;
+        }
+    }
+    // Trim edges so a pure-URL message with no surrounding text yields "".
+    const std::size_t a = out.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return {};
+    const std::size_t b = out.find_last_not_of(" \t\r\n");
+    return out.substr(a, b - a + 1);
 }
 
 // A small circular avatar beside each message, iOS-style: the contact's photo
@@ -536,14 +552,23 @@ std::string html_conversation(const Chat& chat) {
            << "</span></div>"
            << "<div class=\"bubble\">";
         bool wrote = false;
-        // Rich provider embeds (YouTube/Spotify/Vimeo iframes) and link cards for
-        // any URLs in the text, computed first so a link-only message can show
-        // just the card instead of a bare URL above it.
+        // Compute embed cards first (YouTube/Spotify/Vimeo iframes + link
+        // cards) so we know whether any URLs in the text were consumed.
         const std::string embeds =
             m.has_text() ? media_embeds_html(m.text) : std::string();
-        if (m.has_text() && !(!embeds.empty() && is_single_url(m.text))) {
-            os << linkify_html(m.text);
-            wrote = true;
+        if (m.has_text()) {
+            if (embeds.empty()) {
+                // No URLs produced embeds — show the full text with links.
+                os << linkify_html(m.text);
+                wrote = true;
+            } else {
+                // Some URLs became embed cards. Show only the non-URL
+                // portion so the link doesn't appear twice (once as a
+                // plain/linkified URL and once as the rich card below).
+                // iOS Messages never shows the bare URL alongside a preview.
+                const std::string sans = text_sans_urls(m.text);
+                if (!sans.empty()) { os << sans; wrote = true; }
+            }
         }
         for (const Attachment& a : m.attachments) {
             if (wrote) os << "<br>";

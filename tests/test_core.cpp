@@ -394,12 +394,16 @@ void test_url_only_message_card() {
     c.messages.push_back(m);
     const std::string h = imsg::render_html(c);
     check(contains(h, "class=\"linkcard\""), "urlonly: link card is shown");
-    // linkify_html would render the URL as the anchor's visible text; the card
-    // never does, so this exact fragment proves the bare link was suppressed.
+    // text_sans_urls strips the URL entirely; neither the linkified anchor nor
+    // the bare URL should appear above the card.
+    // text_sans_urls strips the URL from the bubble text; it must not appear
+    // as a linkified anchor above the card (the card itself shows the URL in
+    // its own linkcard-url span, which is fine and intentional).
     check(!contains(h, ">https://www.facebook.com/x</a>"),
-          "urlonly: bare URL link suppressed in favor of the card");
+          "urlonly: bare URL not linkified above the card");
 
-    // A message mixing words + a link still shows the text and the card.
+    // A message mixing words + a link: user text shown, URL suppressed (the
+    // card already represents the link — no need to show it twice).
     imsg::Chat c2;
     c2.participants = {"+15550002222"};
     imsg::Message m2;
@@ -407,8 +411,23 @@ void test_url_only_message_card() {
     m2.text = "look https://www.facebook.com/x";
     c2.messages.push_back(m2);
     const std::string h2 = imsg::render_html(c2);
-    check(contains(h2, "look ") && contains(h2, "class=\"linkcard\""),
-          "urlonly: mixed text keeps both the words and the card");
+    check(contains(h2, "look") && contains(h2, "class=\"linkcard\""),
+          "urlonly: mixed text keeps the words and the card");
+    check(!contains(h2, ">https://www.facebook.com/x</a>"),
+          "urlonly: URL not duplicated as a link above the card");
+
+    // YouTube: "Video Title\nhttps://youtu.be/dQw4w9WgXcQ" — the title text
+    // (injected by iOS rich preview) must appear, the URL must not.
+    imsg::Chat c3;
+    c3.participants = {"+15550002222"};
+    imsg::Message m3;
+    m3.sender = "+15550002222";
+    m3.text = "Never Gonna Give You Up\nhttps://youtu.be/dQw4w9WgXcQ";
+    c3.messages.push_back(m3);
+    const std::string h3 = imsg::render_html(c3);
+    check(contains(h3, "Never Gonna Give You Up"), "urlonly: rich-link title shown");
+    check(contains(h3, "class=\"ytcard\""),         "urlonly: youtube card present");
+    check(!contains(h3, "youtu.be/dQw4w9WgXcQ<"),  "urlonly: URL not echoed above card");
 }
 
 void test_avatar_in_recap() {
