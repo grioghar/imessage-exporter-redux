@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "imsg/stats.hpp"
 #include "imsg/theme.hpp"
 #include "imsg/time_util.hpp"
 
@@ -509,7 +510,9 @@ std::string html_conversation(const Chat& chat) {
     std::ostringstream os;
     const std::string title = html_escape(chat.title());
     const auto& people = chat.participant_details;
-    os << "<div class=\"conversation\">\n<header class=\"chat-header\">\n";
+    const bool is_sms = (chat.service == "SMS" || chat.service == "RCS");
+    os << "<div class=\"conversation" << (is_sms ? " sms-style" : "") << "\">\n"
+       << "<header class=\"chat-header\">\n";
     if (people.size() == 1) {
         // 1:1 chat: a large avatar beside the contact's name, with their raw
         // handle (phone/email) on a second line.
@@ -680,6 +683,16 @@ std::string media_embeds_html(const std::string& text) {
 
 std::string render_html(const Chat& chat) {
     return html_head(chat.title()) + html_conversation(chat) + kHtmlTail;
+}
+
+std::string render_html(const Chat& chat, const Stats* per_chat_stats,
+                        const StatsRenderOpts& stats_opts) {
+    std::string html = html_head(chat.title()) + html_conversation(chat);
+    if (per_chat_stats) {
+        html += render_stats_section_html(*per_chat_stats, stats_opts);
+    }
+    html += kHtmlTail;
+    return html;
 }
 
 std::string render_android(const Chat& chat) {

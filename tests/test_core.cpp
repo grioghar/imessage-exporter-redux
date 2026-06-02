@@ -662,6 +662,35 @@ void test_stats() {
     const std::string ndh = imsg::render_stats_html(nd);
     check(contains(ndh, "<html") && contains(ndh, "Fun facts"),
           "stats: undated export still renders a cover page");
+
+    // monthly is populated for dated messages only.
+    check(!st.monthly.empty(), "stats: monthly map is non-empty when has_dates");
+
+    // Timeline CSS class appears when timeline is enabled (default).
+    const std::string html_tl = imsg::render_stats_html(st);
+    check(contains(html_tl, "tl-"), "stats: timeline css class present when enabled");
+
+    // Timeline absent when disabled via opts.
+    imsg::StatsRenderOpts no_tl;
+    no_tl.timeline = false;
+    const std::string html_no_tl = imsg::render_stats_html(st, no_tl);
+    check(!contains(html_no_tl, "tl-"), "stats: tl- class absent when timeline disabled");
+
+    // render_stats_section_html produces a non-empty fragment with stats-section.
+    const std::string sec = imsg::render_stats_section_html(st);
+    check(!sec.empty() && contains(sec, "stats-section"),
+          "stats: section html contains stats-section div");
+
+    // An SMS/RCS chat renders with sms-style class.
+    imsg::Chat sms_chat;
+    sms_chat.service = "SMS";
+    sms_chat.participants = {"+15559999999"};
+    imsg::Message sms_m;
+    sms_m.sender = "+15559999999";
+    sms_m.text = "hey";
+    sms_chat.messages.push_back(sms_m);
+    const std::string sms_html = imsg::render_html(sms_chat);
+    check(contains(sms_html, "sms-style"), "stats: SMS chat renders with sms-style class");
 }
 
 }  // namespace

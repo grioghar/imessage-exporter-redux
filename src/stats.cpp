@@ -223,6 +223,7 @@ void Stats::add(const Chat& chat) {
         emoji += count_emoji(m.text);
 
         ++per_sender[m.sender.empty() ? "Unknown" : m.sender];
+        ++handle_count[m.sender.empty() ? "Unknown" : m.sender];
 
         if (!m.has_date) continue;  // undated messages: counted, but not time-binned
 
@@ -244,6 +245,10 @@ void Stats::add(const Chat& chat) {
                       tm.tm_mon + 1, tm.tm_mday);
         ++by_day[dbuf];
 
+        char mbuf[8];
+        std::snprintf(mbuf, sizeof(mbuf), "%04d-%02d", tm.tm_year + 1900, tm.tm_mon + 1);
+        ++monthly[mbuf];
+
         if (!has_dates || m.date < first) first = m.date;
         if (!has_dates || m.date > last) last = m.date;
         has_dates = true;
@@ -257,24 +262,90 @@ void Stats::add(const Chat& chat) {
 
 void stats_add(Stats& s, const Chat& chat) { s.add(chat); }
 
-std::string render_stats_html(const Stats& s) {
+namespace {
+
+// Renders a CSS month-grid heatmap timeline into `os`. Each year is a row of
+// 12 cells, colored by relative message volume using green hues.
+void render_timeline(std::ostringstream& os, const std::map<std::string, int>& monthly) {
+    if (monthly.empty()) return;
+
+    // Find max for color scaling.
+    int max_val = 0;
+    for (const auto& kv : monthly)
+        if (kv.second > max_val) max_val = kv.second;
+    if (max_val == 0) return;
+
+    // Collect years present.
+    std::vector<int> years;
+    for (const auto& kv : monthly) {
+        int y = 0;
+        std::sscanf(kv.first.c_str(), "%d", &y);
+        if (years.empty() || years.back() != y) years.push_back(y);
+    }
+
+    static const char* kMonAbbr[12] = {"J","F","M","A","M","J","J","A","S","O","N","D"};
+
+    os << "<section><h2 class=\"tl-head\">Activity Timeline</h2>\n"
+       << "<style>"
+          ".tl-grid{display:table;border-collapse:separate;border-spacing:3px}"
+          ".tl-row{display:table-row}"
+          ".tl-cell{display:table-cell;width:28px;height:28px;border-radius:4px;"
+          "text-align:center;vertical-align:middle;font-size:.7rem;cursor:default}"
+          ".tl-label{display:table-cell;font-size:.75rem;padding-right:6px;"
+          "vertical-align:middle;color:#6b6b70;white-space:nowrap}"
+          ".tl-hdr{display:table-cell;width:28px;text-align:center;font-size:.7rem;"
+          "color:#6b6b70;padding-bottom:2px}"
+          "</style>\n"
+       << "<div class=\"tl-grid\">\n"
+       // Header row with month abbreviations
+       << "<div class=\"tl-row\"><div class=\"tl-label\"></div>";
+    for (int m = 0; m < 12; ++m)
+        os << "<div class=\"tl-hdr\">" << kMonAbbr[m] << "</div>";
+    os << "</div>\n";
+
+    for (int y : years) {
+        os << "<div class=\"tl-row\"><div class=\"tl-label\">" << y << "</div>";
+        for (int m = 1; m <= 12; ++m) {
+            char key[8];
+            std::snprintf(key, sizeof(key), "%04d-%02d", y, m);
+            auto it = monthly.find(key);
+            const int count = (it != monthly.end()) ? it->second : 0;
+            // Lightness: 90% for 0 messages → 30% for max messages.
+            const int lightness = 90 - static_cast<int>(60.0 * count / max_val);
+            char style[64];
+            std::snprintf(style, sizeof(style),
+                          "background:hsl(142,60%%,%d%%)", lightness);
+            char title[32];
+            std::snprintf(title, sizeof(title), "%04d-%02d: %d messages", y, m, count);
+            os << "<div class=\"tl-cell\" style=\"" << style
+               << "\" title=\"" << title << "\"></div>";
+        }
+        os << "</div>\n";
+    }
+    os << "</div></section>\n";
+}
+
+// Shared body of sections (no full HTML wrapper), used by both render_stats_html
+// and render_stats_section_html.
+void render_stats_body(std::ostringstream& os, const Stats& st,
+                       const StatsRenderOpts& opts) {
     // --- Derived headline figures ------------------------------------------
-    const double words_per_msg = s.total ? static_cast<double>(s.words) / s.total : 0.0;
-    const double emoji_per_100 = s.total ? static_cast<double>(s.emoji) * 100.0 / s.total : 0.0;
-    const double msgs_per_day = s.days_span ? static_cast<double>(s.total) / s.days_span : 0.0;
+    const double words_per_msg = st.total ? static_cast<double>(st.words) / st.total : 0.0;
+    const double emoji_per_100 = st.total ? static_cast<double>(st.emoji) * 100.0 / st.total : 0.0;
+    const double msgs_per_day = st.days_span ? static_cast<double>(st.total) / st.days_span : 0.0;
 
     // Busiest weekday / hour.
     int peak_wd = 0;
     for (int i = 1; i < 7; ++i)
-        if (s.by_weekday[i] > s.by_weekday[peak_wd]) peak_wd = i;
+        if (st.by_weekday[i] > st.by_weekday[peak_wd]) peak_wd = i;
     int peak_hr = 0;
     for (int i = 1; i < 24; ++i)
-        if (s.by_hour[i] > s.by_hour[peak_hr]) peak_hr = i;
+        if (st.by_hour[i] > st.by_hour[peak_hr]) peak_hr = i;
 
     // Top texter (by raw sender label).
     std::string top_sender;
     long long top_sender_n = 0;
-    for (const auto& kv : s.per_sender)
+    for (const auto& kv : st.per_sender)
         if (kv.second > top_sender_n) {
             top_sender_n = kv.second;
             top_sender = kv.first;
@@ -283,14 +354,158 @@ std::string render_stats_html(const Stats& s) {
     // Busiest single day.
     std::string busy_day;
     long long busy_day_n = 0;
-    for (const auto& kv : s.by_day)
+    for (const auto& kv : st.by_day)
         if (kv.second > busy_day_n) {
             busy_day_n = kv.second;
             busy_day = kv.first;
         }
 
-    const long long streak = longest_streak(s.by_day);
+    const long long streak = longest_streak(st.by_day);
 
+    // --- Headline totals ----------------------------------------------------
+    os << "<div class=\"cards\">\n";
+    auto card = [&](long long n, const char* k) {
+        os << "<div class=\"card\"><div class=\"n\">" << group(n)
+           << "</div><div class=\"k\">" << k << "</div></div>\n";
+    };
+    card(st.total, "messages");
+    card(st.sent, "sent");
+    card(st.received, "received");
+    card(st.with_attachment, "with media");
+    if (opts.word_stats) {
+        card(st.words, "words");
+        card(st.emoji, "emoji");
+    }
+    os << "</div>\n";
+
+    // --- Date span ----------------------------------------------------------
+    if (st.has_dates) {
+        os << "<section><h2>Time span</h2><p>From <strong>" << esc(pretty_date(st.first))
+           << "</strong> to <strong>" << esc(pretty_date(st.last)) << "</strong> &mdash; "
+           << group(st.days_span) << " day" << (st.days_span == 1 ? "" : "s") << ".</p></section>\n";
+    }
+
+    // --- Activity timeline --------------------------------------------------
+    if (opts.timeline && !st.monthly.empty()) {
+        render_timeline(os, st.monthly);
+    }
+
+    // --- By weekday chart ---------------------------------------------------
+    if (opts.weekday) {
+        long long mx = 0;
+        for (long long v : st.by_weekday) mx = std::max(mx, v);
+        if (mx > 0) {
+            os << "<section><h2>Messages by day of week</h2>\n";
+            for (int i = 0; i < 7; ++i) bar_row(os, kWeekdayShort[i], st.by_weekday[i], mx);
+            os << "</section>\n";
+        }
+    }
+
+    // --- By hour chart ------------------------------------------------------
+    if (opts.hourly) {
+        long long mx = 0;
+        for (long long v : st.by_hour) mx = std::max(mx, v);
+        if (mx > 0) {
+            os << "<section><h2>Messages by hour of day</h2>\n";
+            for (int h = 0; h < 24; ++h) {
+                char lbl[8];
+                std::snprintf(lbl, sizeof(lbl), "%02d:00", h);
+                bar_row(os, lbl, st.by_hour[h], mx);
+            }
+            os << "</section>\n";
+        }
+    }
+
+    // --- By year chart ------------------------------------------------------
+    if (st.by_year.size() > 1) {
+        long long mx = 0;
+        for (const auto& kv : st.by_year) mx = std::max(mx, kv.second);
+        os << "<section><h2>Messages by year</h2>\n";
+        for (const auto& kv : st.by_year) bar_row(os, kv.first, kv.second, mx);
+        os << "</section>\n";
+    }
+
+    // --- Top senders --------------------------------------------------------
+    if (opts.top_texters && !st.per_sender.empty()) {
+        std::vector<std::pair<std::string, long long>> ranked(st.per_sender.begin(),
+                                                              st.per_sender.end());
+        std::stable_sort(ranked.begin(), ranked.end(),
+                         [](const auto& a, const auto& b) { return a.second > b.second; });
+        const std::size_t show = std::min<std::size_t>(ranked.size(), 10);
+        os << "<section><h2>Top texters</h2><ol class=\"senders\">\n";
+        for (std::size_t i = 0; i < show; ++i) {
+            const std::string& name = ranked[i].first;
+            auto file_it = st.handle_to_file.find(name);
+            os << "<li>";
+            if (file_it != st.handle_to_file.end() && !file_it->second.empty())
+                os << "<a href=\"" << esc(file_it->second) << "\">" << esc(name) << "</a>";
+            else
+                os << esc(name);
+            os << " <span class=\"c\">(" << group(ranked[i].second) << ")</span></li>\n";
+        }
+        os << "</ol></section>\n";
+    }
+
+    // --- Fun facts ----------------------------------------------------------
+    if (opts.fun_facts) {
+        os << "<section><h2>Fun facts</h2><ul class=\"facts\">\n";
+        auto fact = [&](const char* emoji_char, const std::string& html) {
+            os << "<li><span class=\"e\">" << emoji_char << "</span>" << html << "</li>\n";
+        };
+        if (st.has_dates) {
+            char hr[8];
+            std::snprintf(hr, sizeof(hr), "%02d:00", peak_hr);
+            fact("\xE2\x8F\xB0",  // ⏰
+                 "Your most active hour is <strong>" + std::string(hr) + "</strong> ("
+                     + group(st.by_hour[peak_hr]) + " messages).");
+            fact("\xF0\x9F\x93\x85",  // 📅
+                 "Your busiest day of the week is <strong>" + std::string(kWeekdayLong[peak_wd])
+                     + "</strong>.");
+            if (busy_day_n > 0)
+                fact("\xF0\x9F\x94\xA5",  // 🔥
+                     "Your chattiest single day was <strong>" + esc(busy_day) + "</strong> with "
+                         + group(busy_day_n) + " messages.");
+            if (streak > 1)
+                fact("\xF0\x9F\x93\x88",  // 📈
+                     "Longest daily texting streak: <strong>" + group(streak)
+                         + " days</strong> in a row.");
+        }
+        if (st.days_span > 0)
+            fact("\xF0\x9F\x93\xAC",  // 📬
+                 "That's about <strong>" + fixed1(msgs_per_day) + "</strong> messages a day.");
+        if (!top_sender.empty())
+            fact("\xF0\x9F\x91\x91",  // 👑
+                 "Top texter: <strong>" + esc(top_sender) + "</strong> (" + group(top_sender_n)
+                     + " messages).");
+        if (opts.word_stats && st.total > 0) {
+            fact("\xE2\x9C\x8D\xEF\xB8\x8F",  // ✍️
+                 "You average <strong>" + fixed1(words_per_msg) + "</strong> words per message.");
+            if (st.emoji > 0)
+                fact("\xF0\x9F\x98\x80",  // 😀
+                     "Emoji rate: <strong>" + fixed1(emoji_per_100) + "</strong> per 100 messages ("
+                         + group(st.emoji) + " total).");
+            if (st.with_attachment > 0) {
+                const long long ratio = st.total / st.with_attachment;
+                fact("\xF0\x9F\x93\xB7",  // 📷
+                     "You shared <strong>" + group(st.attachments) + "</strong> attachment"
+                         + (st.attachments == 1 ? "" : "s") + " (roughly 1 in every " + group(ratio)
+                         + " messages had media).");
+            }
+        }
+        if (!st.has_dates)
+            fact("\xF0\x9F\x95\xB0\xEF\xB8\x8F",  // 🕰️
+                 "These messages carried no timestamps, so time-of-day charts are unavailable.");
+        os << "</ul>\n"
+           << "<p style=\"color:#86868b;font-size:.8rem;margin:12px 0 0\">"
+              "Note: chat.db records no location or weather, so this recap focuses on "
+              "time, volume, people, words, and emoji.</p>\n"
+           << "</section>\n";
+    }
+}
+
+}  // namespace
+
+std::string render_stats_html(const Stats& st, const StatsRenderOpts& opts) {
     std::ostringstream os;
     os << "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
        << "<meta charset=\"utf-8\">\n"
@@ -340,136 +555,51 @@ std::string render_stats_html(const Stats& s) {
        << "</head>\n<body>\n<div class=\"wrap\">\n";
 
     os << "<header><h1>Your iMessage Statistics</h1>\n"
-       << "<p>A look back across " << group(s.conversations) << " conversation"
-       << (s.conversations == 1 ? "" : "s") << "</p></header>\n";
+       << "<p>A look back across " << group(st.conversations) << " conversation"
+       << (st.conversations == 1 ? "" : "s") << "</p></header>\n";
 
-    // --- Headline totals ----------------------------------------------------
-    os << "<div class=\"cards\">\n";
-    auto card = [&](long long n, const char* k) {
-        os << "<div class=\"card\"><div class=\"n\">" << group(n)
-           << "</div><div class=\"k\">" << k << "</div></div>\n";
-    };
-    card(s.total, "messages");
-    card(s.sent, "sent");
-    card(s.received, "received");
-    card(s.with_attachment, "with media");
-    card(s.words, "words");
-    card(s.emoji, "emoji");
-    os << "</div>\n";
-
-    // --- Date span ----------------------------------------------------------
-    if (s.has_dates) {
-        os << "<section><h2>Time span</h2><p>From <strong>" << esc(pretty_date(s.first))
-           << "</strong> to <strong>" << esc(pretty_date(s.last)) << "</strong> &mdash; "
-           << group(s.days_span) << " day" << (s.days_span == 1 ? "" : "s") << ".</p></section>\n";
-    }
-
-    // --- By weekday chart ---------------------------------------------------
-    {
-        long long mx = 0;
-        for (long long v : s.by_weekday) mx = std::max(mx, v);
-        if (mx > 0) {
-            os << "<section><h2>Messages by day of week</h2>\n";
-            for (int i = 0; i < 7; ++i) bar_row(os, kWeekdayShort[i], s.by_weekday[i], mx);
-            os << "</section>\n";
-        }
-    }
-
-    // --- By hour chart ------------------------------------------------------
-    {
-        long long mx = 0;
-        for (long long v : s.by_hour) mx = std::max(mx, v);
-        if (mx > 0) {
-            os << "<section><h2>Messages by hour of day</h2>\n";
-            for (int h = 0; h < 24; ++h) {
-                char lbl[8];
-                std::snprintf(lbl, sizeof(lbl), "%02d:00", h);
-                bar_row(os, lbl, s.by_hour[h], mx);
-            }
-            os << "</section>\n";
-        }
-    }
-
-    // --- By year chart ------------------------------------------------------
-    if (s.by_year.size() > 1) {
-        long long mx = 0;
-        for (const auto& kv : s.by_year) mx = std::max(mx, kv.second);
-        os << "<section><h2>Messages by year</h2>\n";
-        for (const auto& kv : s.by_year) bar_row(os, kv.first, kv.second, mx);
-        os << "</section>\n";
-    }
-
-    // --- Top senders --------------------------------------------------------
-    if (!s.per_sender.empty()) {
-        std::vector<std::pair<std::string, long long>> ranked(s.per_sender.begin(),
-                                                              s.per_sender.end());
-        std::stable_sort(ranked.begin(), ranked.end(),
-                         [](const auto& a, const auto& b) { return a.second > b.second; });
-        const std::size_t show = std::min<std::size_t>(ranked.size(), 10);
-        os << "<section><h2>Top texters</h2><ol class=\"senders\">\n";
-        for (std::size_t i = 0; i < show; ++i) {
-            os << "<li>" << esc(ranked[i].first) << " <span class=\"c\">("
-               << group(ranked[i].second) << ")</span></li>\n";
-        }
-        os << "</ol></section>\n";
-    }
-
-    // --- Fun facts ----------------------------------------------------------
-    os << "<section><h2>Fun facts</h2><ul class=\"facts\">\n";
-    auto fact = [&](const char* emoji_char, const std::string& html) {
-        os << "<li><span class=\"e\">" << emoji_char << "</span>" << html << "</li>\n";
-    };
-    if (s.has_dates) {
-        char hr[8];
-        std::snprintf(hr, sizeof(hr), "%02d:00", peak_hr);
-        fact("\xE2\x8F\xB0",  // ⏰
-             "Your most active hour is <strong>" + std::string(hr) + "</strong> ("
-                 + group(s.by_hour[peak_hr]) + " messages).");
-        fact("\xF0\x9F\x93\x85",  // 📅
-             "Your busiest day of the week is <strong>" + std::string(kWeekdayLong[peak_wd])
-                 + "</strong>.");
-        if (busy_day_n > 0)
-            fact("\xF0\x9F\x94\xA5",  // 🔥
-                 "Your chattiest single day was <strong>" + esc(busy_day) + "</strong> with "
-                     + group(busy_day_n) + " messages.");
-        if (streak > 1)
-            fact("\xF0\x9F\x93\x88",  // 📈
-                 "Longest daily texting streak: <strong>" + group(streak)
-                     + " days</strong> in a row.");
-    }
-    if (s.days_span > 0)
-        fact("\xF0\x9F\x93\xAC",  // 📬
-             "That's about <strong>" + fixed1(msgs_per_day) + "</strong> messages a day.");
-    if (!top_sender.empty())
-        fact("\xF0\x9F\x91\x91",  // 👑
-             "Top texter: <strong>" + esc(top_sender) + "</strong> (" + group(top_sender_n)
-                 + " messages).");
-    if (s.total > 0) {
-        fact("\xE2\x9C\x8D\xEF\xB8\x8F",  // ✍️
-             "You average <strong>" + fixed1(words_per_msg) + "</strong> words per message.");
-        if (s.emoji > 0)
-            fact("\xF0\x9F\x98\x80",  // 😀
-                 "Emoji rate: <strong>" + fixed1(emoji_per_100) + "</strong> per 100 messages ("
-                     + group(s.emoji) + " total).");
-        if (s.with_attachment > 0) {
-            const long long ratio = s.total / s.with_attachment;  // with_attachment > 0 here
-            fact("\xF0\x9F\x93\xB7",  // 📷
-                 "You shared <strong>" + group(s.attachments) + "</strong> attachment"
-                     + (s.attachments == 1 ? "" : "s") + " (roughly 1 in every " + group(ratio)
-                     + " messages had media).");
-        }
-    }
-    if (!s.has_dates)
-        fact("\xF0\x9F\x95\xB0\xEF\xB8\x8F",  // 🕰️
-             "These messages carried no timestamps, so time-of-day charts are unavailable.");
-    os << "</ul>\n"
-       << "<p style=\"color:#86868b;font-size:.8rem;margin:12px 0 0\">"
-          "Note: chat.db records no location or weather, so this recap focuses on "
-          "time, volume, people, words, and emoji.</p>\n"
-       << "</section>\n";
+    render_stats_body(os, st, opts);
 
     os << "<footer>Generated by iMessage Exporter &middot; no data left this device</footer>\n"
        << "</div>\n</body>\n</html>\n";
+    return os.str();
+}
+
+std::string render_stats_section_html(const Stats& st, const StatsRenderOpts& opts) {
+    std::ostringstream os;
+    os << "<div class=\"stats-section\">\n"
+       << "<style>"
+          ".stats-section .cards{display:grid;"
+          "grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"
+          "gap:10px;margin:16px 0}"
+          ".stats-section .card{background:rgba(0,0,0,.04);border-radius:12px;"
+          "padding:12px;text-align:center}"
+          ".stats-section .card .n{font-size:1.4rem;font-weight:700;color:#7c3aed}"
+          ".stats-section .card .k{font-size:.75rem;text-transform:uppercase;"
+          "letter-spacing:.04em;color:#6b6b70}"
+          ".stats-section section{background:rgba(0,0,0,.03);border-radius:12px;"
+          "padding:16px 18px;margin:14px 0}"
+          ".stats-section section h2{margin:0 0 10px;font-size:1rem}"
+          ".stats-section .bar{display:flex;align-items:center;gap:8px;margin:4px 0}"
+          ".stats-section .bar .lbl{flex:0 0 72px;font-size:.8rem;color:#48484a;text-align:right}"
+          ".stats-section .bar .track{flex:1;background:#ddd;border-radius:4px;"
+          "overflow:hidden;height:13px}"
+          ".stats-section .bar .fill{display:block;height:100%;border-radius:4px;"
+          "background:linear-gradient(90deg,#8b5cf6,#ec4899);min-width:2px}"
+          ".stats-section .bar .val{flex:0 0 54px;font-size:.75rem;color:#6b6b70}"
+          ".stats-section ol.senders{margin:0;padding-left:1.2em}"
+          ".stats-section ol.senders li{margin:2px 0}"
+          ".stats-section ol.senders .c{color:#6b6b70;font-size:.8rem}"
+          ".stats-section ul.facts{list-style:none;margin:0;padding:0}"
+          ".stats-section ul.facts li{padding:6px 0;border-bottom:1px solid #eee}"
+          ".stats-section ul.facts li:last-child{border-bottom:0}"
+          ".stats-section ul.facts .e{margin-right:6px}"
+          "</style>\n"
+       << "<h2>Conversation Stats</h2>\n";
+
+    render_stats_body(os, st, opts);
+
+    os << "</div>\n";
     return os.str();
 }
 
