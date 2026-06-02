@@ -53,6 +53,7 @@ add_library(imsg_core STATIC
   src/time_util.cpp
   src/attributed_body.cpp
   src/exporters.cpp
+  src/theme.cpp
   src/contact_book.cpp
   src/vcard.cpp
 )

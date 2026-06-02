@@ -13,6 +13,7 @@
 #include "imsg/exporters.hpp"
 #include "imsg/build_stamp.hpp"
 #include "imsg/log.hpp"
+#include "imsg/theme.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/version.hpp"
 
@@ -22,6 +23,16 @@ namespace {
 
 // Displayed version includes the build timestamp, e.g. 0.2.2-0106261004.
 constexpr const char* kVersion = IMSG_VERSION "." IMSG_BUILD_STAMP;
+
+// Comma-separated built-in HTML theme names, for help text.
+std::string theme_list() {
+    std::string out;
+    for (const std::string& t : imsg::theme_names()) {
+        if (!out.empty()) out += ", ";
+        out += t;
+    }
+    return out;
+}
 
 void print_usage(std::ostream& os) {
     os << "Usage: imessage-exporter [options]\n\n"
@@ -36,6 +47,7 @@ void print_usage(std::ostream& os) {
        << "  --since DATE     Only messages on/after DATE (YYYY-MM-DD[ HH:MM:SS])\n"
        << "  --until DATE     Only messages on/before DATE (date-only = end of day)\n"
        << "  --combined       Write one combined file instead of one per chat\n"
+       << "  --theme NAME     HTML visual theme: " << theme_list() << " (default: ios)\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
        << "  --hidden-attachments  Name each conversation's attachment folder \".<name>\"\n"
@@ -208,6 +220,8 @@ int main(int argc, char** argv) {
             if (!take_value(argc, argv, i, "--output", output_dir)) return 2;
         } else if (arg == "--me") {
             if (!take_value(argc, argv, i, "--me", opts.me_label)) return 2;
+        } else if (arg == "--theme") {
+            if (!take_value(argc, argv, i, "--theme", opts.html_theme)) return 2;
         } else if (arg == "--contacts-db") {
             if (!take_value(argc, argv, i, "--contacts-db", opts.contacts_path)) return 2;
         } else if (arg == "--since") {

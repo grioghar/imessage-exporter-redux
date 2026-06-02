@@ -2,6 +2,7 @@
 //
 // Deliberately free of any SQLite dependency so it builds and runs anywhere a
 // C++17 compiler is available, even without libsqlite3 headers.
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
 #include "imsg/models.hpp"
+#include "imsg/theme.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/vcard.hpp"
 
@@ -560,6 +562,26 @@ void test_chat_title() {
     check_eq(c.title(), "Weekend Plans", "title: display name wins");
 }
 
+void test_themes() {
+    const std::vector<std::string> names = imsg::theme_names();
+    check(std::find(names.begin(), names.end(), "matrix") != names.end(),
+          "theme: names contains matrix");
+
+    // The default theme is the base layout, non-empty and keyed by .bubble.
+    const std::string ios = imsg::theme_css("ios");
+    check(!ios.empty() && contains(ios, ".bubble"), "theme: ios css has .bubble");
+    // A non-default theme retints the base, so its stylesheet must differ.
+    check(imsg::theme_css("matrix") != ios, "theme: matrix css differs from ios");
+
+    // Selecting a theme only changes the stylesheet — the HTML structure (class
+    // names) is preserved, and the theme's CSS marker appears in the document.
+    imsg::set_html_theme("matrix");
+    const std::string html = imsg::render_html(make_chat());
+    check(contains(html, "class=\"msg me\""), "theme: matrix preserves msg markup");
+    check(contains(html, "/*theme:matrix*/"), "theme: matrix css emitted in head");
+    imsg::set_html_theme("ios");  // restore default for any later renders
+}
+
 }  // namespace
 
 int main() {
@@ -590,6 +612,7 @@ int main() {
     test_markdown_export();
     test_android_export();
     test_chat_title();
+    test_themes();
 
     if (g_failures == 0) {
         std::cout << "OK: all " << g_checks << " checks passed\n";

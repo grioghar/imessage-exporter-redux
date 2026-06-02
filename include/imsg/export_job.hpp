@@ -16,6 +16,9 @@ namespace imsg {
 struct ExportOptions {
     std::string me_label = "Me";  // sender label for messages you sent
 
+    // Visual theme for HTML export (see theme.hpp); ignored by other formats.
+    std::string html_theme = "ios";
+
     // Inclusive timestamp window (epoch seconds). Either bound may be disabled.
     bool has_since = false;
     std::time_t since = 0;

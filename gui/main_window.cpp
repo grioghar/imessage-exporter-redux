@@ -60,6 +60,7 @@
 #include "imsg/exporters.hpp"
 #include "imsg/log.hpp"
 #include "imsg/build_stamp.hpp"
+#include "imsg/theme.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/vcard.hpp"
 #include "imsg/version.hpp"
@@ -206,6 +207,14 @@ MainWindow::MainWindow()
     format_->addItems({"txt", "md", "html", "json", "pdf", "android"});
     format_->setCurrentText("html");
     outForm->addRow("Format:", format_);
+
+    // HTML/PDF visual theme; built-ins come from the core so the list stays in
+    // one place. Ignored by the engine for non-HTML formats.
+    themeCombo_ = new QComboBox;
+    for (const std::string& t : imsg::theme_names())
+        themeCombo_->addItem(QString::fromStdString(t));
+    themeCombo_->setCurrentText("ios");
+    outForm->addRow("Theme:", themeCombo_);
 
     auto* outRow = new QHBoxLayout;
     outputDir_ = new QLineEdit;
@@ -573,6 +582,7 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     }
 
     opts.me_label = meLabel_->text().isEmpty() ? "Me" : meLabel_->text().toStdString();
+    opts.html_theme = themeCombo_->currentText().toStdString();
     opts.combined = combined_->isChecked();
     opts.copy_attachments = copyAttachments_->isChecked();
     opts.embed_attachments = embedAttachments_->isChecked();
@@ -968,6 +978,7 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/source", source_->currentIndex());
     s.setValue("ui/db", dbPath_->text());
     s.setValue("ui/format", format_->currentText());
+    s.setValue("ui/theme", themeCombo_->currentText());
     s.setValue("ui/output", outputDir_->text());
     s.setValue("ui/me", meLabel_->text());
     // New keys (the old ui/since/ui/until used a 1-year-ago default that would
@@ -993,6 +1004,7 @@ void MainWindow::loadSettings() {
     source_->setCurrentIndex(s.value("ui/source", source_->currentIndex()).toInt());
     dbPath_->setText(s.value("ui/db").toString());
     format_->setCurrentText(s.value("ui/format", "html").toString());
+    themeCombo_->setCurrentText(s.value("ui/theme", "ios").toString());
     outputDir_->setText(s.value("ui/output", outputDir_->text()).toString());
     meLabel_->setText(s.value("ui/me", "Me").toString());
     const QDate sd = QDate::fromString(s.value("ui/sinceDate").toString(), "yyyy-MM-dd");
