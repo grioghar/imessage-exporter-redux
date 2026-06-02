@@ -49,6 +49,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent>
 
+#include <algorithm>
 #include <ctime>
 #include <string>
 
@@ -1086,34 +1087,65 @@ void MainWindow::pickPeople() {
         if (st.open()) st.load_into(book);
     }
 
-    QStringList people;
-    QHash<QString, QString> photoByDisp;  // display string -> photo data URI/URL
+    // One row per distinct participant; carries everything the dialog needs to
+    // sort/filter/display, plus the canonical "Name  —  +handle" we must store
+    // (the export filter matches that substring-both-ways).
+    struct PersonRow {
+        QString canonical;  // stored into selectedPeople_; matched by the filter
+        QString display;    // richer label shown in the list
+        QString name;       // resolved name, or "" when only a handle is known
+        QString lastName;   // last whitespace token of name (for "Last name" sort)
+        QString service;    // iMessage / SMS / RCS, or ""
+        std::time_t lastDate = 0;
+        bool hasLast = false;
+    };
+    std::vector<PersonRow> rows;
+    QHash<QString, QString> photoByCanon;  // canonical -> photo data URI/URL
     try {
         // Keep raw handles (no set_contacts) so we can show "Name — number".
         imsg::MessagesDatabase db(db_path, opts.me_label);
         db.open();
+        QHash<QString, imsg::HandleStat> statByHandle;  // raw handle -> stats
+        for (const imsg::HandleStat& s : db.handle_stats())
+            statByHandle.insert(QString::fromStdString(s.handle), s);
+
         QSet<QString> seen;
         for (const imsg::Chat& c : db.load_chat_index()) {
             if (c.message_count == 0) continue;
             for (const std::string& p : c.participants) {
                 if (p.empty()) continue;
                 const QString handle = QString::fromStdString(p);
-                const std::string nm = book.name_for(p);
-                const QString disp =
-                    nm.empty() ? handle
-                               : QString::fromStdString(nm) + "  —  " + handle;
-                if (!seen.contains(disp)) {
-                    seen.insert(disp);
-                    people << disp;
-                    photoByDisp.insert(disp, QString::fromStdString(book.photo_for(p)));
-                }
+                const std::string nm = book.name_for(p);  // "" when unresolved
+                PersonRow r;
+                r.name = QString::fromStdString(nm);
+                r.canonical = r.name.isEmpty() ? handle : r.name + "  —  " + handle;
+                if (seen.contains(r.canonical)) continue;
+                seen.insert(r.canonical);
+
+                const imsg::HandleStat st = statByHandle.value(handle);
+                r.service = QString::fromStdString(st.service);
+                r.lastDate = st.last_date;
+                r.hasLast = st.has_last;
+                const QString lastStr =
+                    r.hasLast ? QDateTime::fromSecsSinceEpoch(r.lastDate).date().toString(
+                                    "yyyy-MM-dd")
+                              : QStringLiteral("—");
+                // Last whitespace-separated token of the name (for "Last name"
+                // sort); falls back to the whole canonical when there's no name.
+                const QStringList parts =
+                    r.name.simplified().split(' ', Qt::SkipEmptyParts);
+                r.lastName = parts.isEmpty() ? r.canonical : parts.last();
+                r.display = r.canonical + "   ·  " +
+                            (r.service.isEmpty() ? QStringLiteral("—") : r.service) +
+                            "  ·  " + lastStr;
+                photoByCanon.insert(r.canonical, QString::fromStdString(book.photo_for(p)));
+                rows.push_back(std::move(r));
             }
         }
     } catch (const imsg::DatabaseError& e) {
         showExportError(QString::fromUtf8(e.what()), "Cannot read messages");
         return;
     }
-    people.sort(Qt::CaseInsensitive);
 
     QDialog dlg(this);
     dlg.setWindowTitle("Select people to export");
@@ -1121,21 +1153,98 @@ void MainWindow::pickPeople() {
     layout->addWidget(new QLabel("Export only conversations with the checked people "
                                  "(none checked = all):",
                                  &dlg));
+
+    // Controls row: sort order + free-text filter.
+    auto* ctrlRow = new QHBoxLayout;
+    auto* sortCombo = new QComboBox(&dlg);
+    sortCombo->addItems({"Name (A–Z)", "Last name", "Last text (newest)",
+                         "Last text (oldest)", "Service"});
+    auto* filterEdit = new QLineEdit(&dlg);
+    filterEdit->setPlaceholderText("Filter…");
+    filterEdit->setClearButtonEnabled(true);
+    ctrlRow->addWidget(new QLabel("Sort by:", &dlg));
+    ctrlRow->addWidget(sortCombo);
+    ctrlRow->addWidget(filterEdit, 1);
+    layout->addLayout(ctrlRow);
+
     auto* list = new QListWidget(&dlg);
     list->setIconSize(QSize(28, 28));
-    for (const QString& p : people) {
-        auto* item = new QListWidgetItem(p, list);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        item->setCheckState(selectedPeople_.contains(p) ? Qt::Checked : Qt::Unchecked);
-        const QIcon ic = iconFromDataUri(photoByDisp.value(p));  // contact photo preview
-        if (!ic.isNull()) item->setIcon(ic);
-    }
-    list->setMinimumSize(420, 320);
+    list->setMinimumSize(460, 320);
     layout->addWidget(list);
+
+    // Checked state survives re-sorting/-filtering (a hidden-by-filter item stays
+    // checked), so track it by canonical rather than reading the live widgets.
+    QSet<QString> checked;
+    for (const QString& s : selectedPeople_) checked.insert(s);
+    auto syncCheckedFromList = [list, &checked] {
+        for (int i = 0; i < list->count(); ++i) {
+            QListWidgetItem* it = list->item(i);
+            const QString canon = it->data(Qt::UserRole).toString();
+            if (it->checkState() == Qt::Checked)
+                checked.insert(canon);
+            else
+                checked.remove(canon);
+        }
+    };
+
+    // Clears and repopulates the list from `rows`, applying the chosen sort and
+    // the case-insensitive substring filter (matched against the shown text).
+    auto repopulate = [&] {
+        std::vector<const PersonRow*> view;
+        view.reserve(rows.size());
+        const QString needle = filterEdit->text().trimmed();
+        for (const PersonRow& r : rows)
+            if (needle.isEmpty() || r.display.contains(needle, Qt::CaseInsensitive))
+                view.push_back(&r);
+
+        const int mode = sortCombo->currentIndex();
+        std::stable_sort(view.begin(), view.end(),
+                         [mode](const PersonRow* a, const PersonRow* b) {
+            switch (mode) {
+                case 1:  // Last name (then full name to break ties)
+                    if (int c = a->lastName.compare(b->lastName, Qt::CaseInsensitive))
+                        return c < 0;
+                    return a->name.compare(b->name, Qt::CaseInsensitive) < 0;
+                case 2:  // Last text, newest first (dated before undated)
+                    if (a->hasLast != b->hasLast) return a->hasLast;
+                    if (a->lastDate != b->lastDate) return a->lastDate > b->lastDate;
+                    return a->canonical.compare(b->canonical, Qt::CaseInsensitive) < 0;
+                case 3:  // Last text, oldest first (dated before undated)
+                    if (a->hasLast != b->hasLast) return a->hasLast;
+                    if (a->lastDate != b->lastDate) return a->lastDate < b->lastDate;
+                    return a->canonical.compare(b->canonical, Qt::CaseInsensitive) < 0;
+                case 4:  // Service, then name
+                    if (int c = a->service.compare(b->service, Qt::CaseInsensitive))
+                        return c < 0;
+                    return a->canonical.compare(b->canonical, Qt::CaseInsensitive) < 0;
+                default:  // Name (A–Z)
+                    return a->canonical.compare(b->canonical, Qt::CaseInsensitive) < 0;
+            }
+        });
+
+        list->clear();
+        for (const PersonRow* r : view) {
+            auto* item = new QListWidgetItem(r->display, list);
+            item->setData(Qt::UserRole, r->canonical);  // value the filter matches
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(checked.contains(r->canonical) ? Qt::Checked
+                                                               : Qt::Unchecked);
+            const QIcon ic = iconFromDataUri(photoByCanon.value(r->canonical));
+            if (!ic.isNull()) item->setIcon(ic);
+        }
+    };
+
+    // Re-sort/-filter live; keep prior checks by syncing them out first.
+    connect(sortCombo, &QComboBox::currentIndexChanged, &dlg,
+            [&] { syncCheckedFromList(); repopulate(); });
+    connect(filterEdit, &QLineEdit::textChanged, &dlg,
+            [&] { syncCheckedFromList(); repopulate(); });
+    repopulate();
 
     auto* selRow = new QHBoxLayout;
     auto* selAllBtn = new QPushButton("Select all", &dlg);
     auto* selNoneBtn = new QPushButton("Unselect all", &dlg);
+    // Operate on the currently visible (filtered) items.
     connect(selAllBtn, &QPushButton::clicked, &dlg, [list] {
         for (int i = 0; i < list->count(); ++i)
             list->item(i)->setCheckState(Qt::Checked);
@@ -1156,10 +1265,10 @@ void MainWindow::pickPeople() {
     layout->addWidget(buttons);
     if (dlg.exec() != QDialog::Accepted) return;
 
+    syncCheckedFromList();  // fold in any items hidden by an active filter
     selectedPeople_.clear();
-    for (int i = 0; i < list->count(); ++i)
-        if (list->item(i)->checkState() == Qt::Checked)
-            selectedPeople_ << list->item(i)->text();
+    for (const QString& canon : checked) selectedPeople_ << canon;
+    selectedPeople_.sort(Qt::CaseInsensitive);
     peopleLabel_->setText(selectedPeople_.isEmpty()
                               ? "All conversations"
                               : QString("%1 selected").arg(selectedPeople_.size()));
