@@ -30,6 +30,8 @@ class QLabel;
 class QWidget;
 class QDialog;
 class QTabWidget;
+class QStatusBar;
+class QProgressBar;
 
 class MainWindow : public QWidget {
     Q_OBJECT
@@ -128,7 +130,9 @@ class MainWindow : public QWidget {
     QPushButton* pauseBtn_ = nullptr;
     QPushButton* stopBtn_ = nullptr;
     QPushButton* openBtn_ = nullptr;
-    QLabel* status_ = nullptr;
+    QLabel* status_ = nullptr;          // status text, shown in the bottom bar
+    QStatusBar* statusBar_ = nullptr;   // persistent bottom bar (all tabs)
+    QProgressBar* progress_ = nullptr;  // export progress in the status bar
     QPlainTextEdit* logView_ = nullptr;
     QTabWidget* tabs_ = nullptr;
     QDialog* prefsDialog_ = nullptr;   // holds the persistent configuration

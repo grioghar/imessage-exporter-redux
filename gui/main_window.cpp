@@ -30,10 +30,12 @@
 #include <QPageSize>
 #include <QPdfWriter>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QTabWidget>
 #include <QTextStream>
 #include <QThread>
@@ -219,8 +221,6 @@ MainWindow::MainWindow()
     btnRow->addWidget(openBtn_);
     btnRow->addStretch();
     runLayout->addLayout(btnRow);
-    status_ = new QLabel("Ready.");
-    runLayout->addWidget(status_);
     logView_ = new QPlainTextEdit;
     logView_->setReadOnly(true);
     logView_->setMinimumHeight(220);
@@ -384,6 +384,18 @@ MainWindow::MainWindow()
     auto* root = new QVBoxLayout(this);
     root->setMenuBar(menuBar);
     root->addWidget(tabs_);
+
+    // Persistent status bar at the bottom, visible from every tab: a status
+    // message on the left and an export progress bar on the right.
+    status_ = new QLabel("Ready.");
+    progress_ = new QProgressBar;
+    progress_->setMaximumWidth(180);
+    progress_->setVisible(false);
+    statusBar_ = new QStatusBar;
+    statusBar_->setSizeGripEnabled(false);
+    statusBar_->addWidget(status_, 1);
+    statusBar_->addPermanentWidget(progress_);
+    root->addWidget(statusBar_);
 
     connect(exportBtn_, &QPushButton::clicked, this, &MainWindow::startExport);
     connect(pauseBtn_, &QPushButton::clicked, this, &MainWindow::pauseExport);
@@ -662,6 +674,10 @@ void MainWindow::setBusy(bool busy) {
     pauseBtn_->setEnabled(busy);
     stopBtn_->setEnabled(busy);
     if (!busy) pauseBtn_->setText("Pause");
+    if (progress_) {
+        progress_->setVisible(busy);
+        if (busy) progress_->setRange(0, 0);  // indeterminate until totals arrive
+    }
     status_->setText(busy ? "Exporting…" : "Ready.");
 }
 
@@ -814,6 +830,10 @@ void MainWindow::startExportResuming(bool resume) {
 
 void MainWindow::onProgress(int done, int total) {
     status_->setText(QString("Exporting… %1 of %2 conversations").arg(done).arg(total));
+    if (progress_) {
+        progress_->setRange(0, total > 0 ? total : 0);  // 0,0 stays indeterminate
+        progress_->setValue(done);
+    }
     QSettings s;
     s.setValue("job/done", done);
     s.setValue("job/total", total);
