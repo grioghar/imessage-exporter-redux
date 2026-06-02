@@ -229,6 +229,8 @@ MainWindow::MainWindow()
 
     combined_ = new QCheckBox("Single combined file (instead of one per conversation)");
     outForm->addRow("", combined_);
+    statsCover_ = new QCheckBox("Add a statistics cover page");
+    outForm->addRow("", statsCover_);
     tabs_->addTab(outputPage, "Output");
 
     // --- Run tab ------------------------------------------------------------
@@ -584,6 +586,7 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.me_label = meLabel_->text().isEmpty() ? "Me" : meLabel_->text().toStdString();
     opts.html_theme = themeCombo_->currentText().toStdString();
     opts.combined = combined_->isChecked();
+    opts.stats_cover = statsCover_->isChecked();
     opts.copy_attachments = copyAttachments_->isChecked();
     opts.embed_attachments = embedAttachments_->isChecked();
     opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
@@ -986,6 +989,7 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/sinceDate", since_->date().toString("yyyy-MM-dd"));
     s.setValue("ui/untilDate", until_->date().toString("yyyy-MM-dd"));
     s.setValue("ui/combined", combined_->isChecked());
+    s.setValue("ui/statsCover", statsCover_->isChecked());
     s.setValue("ui/copy", copyAttachments_->isChecked());
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
@@ -1013,6 +1017,7 @@ void MainWindow::loadSettings() {
     if (ud.isValid()) until_->setDate(ud);
     updateDateSummary();
     combined_->setChecked(s.value("ui/combined", false).toBool());
+    statsCover_->setChecked(s.value("ui/statsCover", false).toBool());
     copyAttachments_->setChecked(s.value("ui/copy", true).toBool());
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());

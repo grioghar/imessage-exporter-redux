@@ -54,6 +54,7 @@ add_library(imsg_core STATIC
   src/attributed_body.cpp
   src/exporters.cpp
   src/theme.cpp
+  src/stats.cpp
   src/contact_book.cpp
   src/vcard.cpp
 )

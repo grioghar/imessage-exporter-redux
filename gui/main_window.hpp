@@ -111,6 +111,7 @@ class MainWindow : public QWidget {
     QDateEdit* until_ = nullptr;   // at today = no upper bound (through now)
     QLabel* dateSummary_ = nullptr;  // live "what will be exported" line
     QCheckBox* combined_ = nullptr;
+    QCheckBox* statsCover_ = nullptr;  // write a statistics cover page (00-statistics.html)
     QCheckBox* copyAttachments_ = nullptr;
     QCheckBox* embedAttachments_ = nullptr;
     QCheckBox* hiddenAttachDir_ = nullptr;

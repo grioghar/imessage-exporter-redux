@@ -48,6 +48,7 @@ void print_usage(std::ostream& os) {
        << "  --until DATE     Only messages on/before DATE (date-only = end of day)\n"
        << "  --combined       Write one combined file instead of one per chat\n"
        << "  --theme NAME     HTML visual theme: " << theme_list() << " (default: ios)\n"
+       << "  --stats          Also write a statistics cover page (00-statistics.html)\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
        << "  --hidden-attachments  Name each conversation's attachment folder \".<name>\"\n"
@@ -202,6 +203,8 @@ int main(int argc, char** argv) {
             imsg::set_log_level(imsg::LogLevel::Debug);
         } else if (arg == "--combined") {
             opts.combined = true;
+        } else if (arg == "--stats") {
+            opts.stats_cover = true;
         } else if (arg == "--copy-attachments") {
             opts.copy_attachments = true;
         } else if (arg == "--embed-attachments") {
@@ -325,6 +328,7 @@ int main(int argc, char** argv) {
     std::cout << "Exported " << summary.conversations << " conversation(s) to "
               << output_dir << " as " << format_name;
     if (opts.combined) std::cout << " (combined)";
+    if (opts.stats_cover) std::cout << " (+ statistics page)";
     if (opts.copy_attachments)
         std::cout << ", copied " << summary.attachments_copied << " attachment(s)";
     std::cout << ".\n";

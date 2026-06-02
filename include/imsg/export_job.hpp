@@ -29,6 +29,10 @@ struct ExportOptions {
     // one file per conversation.
     bool combined = false;
 
+    // Also write a standalone "00-statistics.html" cover page summarizing the
+    // export (totals, time-of-day/weekday charts, top texters, fun facts).
+    bool stats_cover = false;
+
     // Copy each attachment's file into <out_dir>/attachments/... and link to it
     // from the export, instead of exporting only attachment metadata.
     bool copy_attachments = false;

@@ -15,6 +15,7 @@
 #include "imsg/log.hpp"
 #include "imsg/models.hpp"
 #include "imsg/theme.hpp"
+#include "imsg/stats.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/vcard.hpp"
 
@@ -580,6 +581,54 @@ void test_themes() {
     check(contains(html, "class=\"msg me\""), "theme: matrix preserves msg markup");
     check(contains(html, "/*theme:matrix*/"), "theme: matrix css emitted in head");
     imsg::set_html_theme("ios");  // restore default for any later renders
+void test_stats() {
+    // Fold make_chat() (2 text msgs + 1 attachment-only msg) into an accumulator
+    // twice, exercising both the dated (m1) and undated (m2/m3) message paths.
+    imsg::Stats st;
+    imsg::stats_add(st, make_chat());
+    imsg::stats_add(st, make_chat());
+    check(st.total == 6, "stats: total counts every message");
+    check(st.sent == 2 && st.received == 4, "stats: sent/received split via is_from_me");
+    check(st.with_attachment == 2 && st.attachments == 2, "stats: attachment tally");
+    check(st.words == 8, "stats: whitespace word tokens (2+2 per chat)");
+    check(st.has_dates, "stats: a dated message arms the date span");
+    check(st.conversations == 2, "stats: conversation count");
+
+    const std::string html = imsg::render_stats_html(st);
+    check(contains(html, "<html"), "stats: emits an HTML document");
+    check(contains(html, "</html>"), "stats: document is closed");
+    check(contains(html, "Fun facts"), "stats: includes the Fun facts section");
+    check(contains(html, "Top texters"), "stats: lists top texters");
+    check(contains(html, "+15551234567"), "stats: a sender label appears");
+    check(contains(html, ">6<"), "stats: the total (6) is rendered");
+    check(html.size() > 1500, "stats: non-trivial document");
+
+    // Emoji are counted per code point: 😀 is one, and a 🇺🇸 flag is two regional
+    // indicators (U+1F1FA U+1F1F8), so this text counts as 3.
+    imsg::Chat c;
+    c.participants = {"+15550000000"};
+    imsg::Message m;
+    m.sender = "+15550000000";
+    m.text = "hi \xF0\x9F\x98\x80 \xF0\x9F\x87\xBA\xF0\x9F\x87\xB8";
+    c.messages.push_back(m);
+    imsg::Stats es;
+    imsg::stats_add(es, c);
+    check(es.emoji == 3, "stats: counts emoji code points (smiley + 2-codepoint flag)");
+    check(es.words == 3, "stats: emoji tokens still count as words");
+
+    // No-date chat: still renders, and notes the missing timestamps.
+    imsg::Stats nd;
+    imsg::Chat plain;
+    plain.participants = {"+15551112222"};
+    imsg::Message pm;
+    pm.sender = "+15551112222";
+    pm.text = "no date here";
+    plain.messages.push_back(pm);
+    imsg::stats_add(nd, plain);
+    check(!nd.has_dates, "stats: undated chat leaves has_dates false");
+    const std::string ndh = imsg::render_stats_html(nd);
+    check(contains(ndh, "<html") && contains(ndh, "Fun facts"),
+          "stats: undated export still renders a cover page");
 }
 
 }  // namespace
@@ -613,6 +662,7 @@ int main() {
     test_android_export();
     test_chat_title();
     test_themes();
+    test_stats();
 
     if (g_failures == 0) {
         std::cout << "OK: all " << g_checks << " checks passed\n";
