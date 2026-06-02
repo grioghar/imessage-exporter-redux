@@ -327,9 +327,26 @@ See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full schema reference.
 
 ## Roadmap
 
-The 0.6.0 items (themes, statistics, inactive-contact filtering) all shipped. The
-next round of ideas lives in the [Issues](../../issues) tracker — open one to
-suggest a feature or vote with a 👍.
+The 0.6.0 features (themes, statistics, inactive-contact filtering) and the 0.6.x
+bug-fix cycle all shipped. Below is the planned scope for **0.7.0**:
+
+- **AI relationship analysis engine.** Analyse the patterns and dynamics within
+  conversations — sentiment arcs, topic clustering, response-time graphs, dominant
+  speakers, relationship strength over time, and statistical correlations between
+  contacts and time/date/context. Produces a rich analytical report alongside the
+  export.
+- **AI service OAuth + message summarisation.** An OAuth sign-in flow for major
+  AI providers (OpenAI/ChatGPT, Anthropic/Claude, Google Gemini, and others).
+  Once authenticated, selected conversations or date ranges can be submitted for
+  AI-generated summary, sentiment analysis, or Q&A. Credentials are stored
+  encrypted in the platform keychain alongside existing Google credentials.
+- **Reply engine (HTML → iMessage).** A way to reply to conversations directly
+  from the exported HTML page. Each message bubble gains a reply affordance that
+  opens a compose area; sending routes through the macOS Messages URL scheme
+  (or AppleScript on macOS) to deliver the reply via iMessage without leaving
+  the export.
+
+Suggestions and votes welcome — open an issue or add a 👍 to an existing one.
 
 ---
 
