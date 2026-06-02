@@ -113,4 +113,36 @@ std::string decode_attributed_body(const std::string& blob) {
     return decode_impl(std::string_view(blob));
 }
 
+std::string sanitize_text(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    const std::size_t n = s.size();
+    std::size_t i = 0;
+    while (i < n) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c < 0x80) {  // ASCII: keep tab/newline + printable, drop other C0
+            if (c == '\t' || c == '\n' || c >= 0x20) out += static_cast<char>(c);
+            ++i;
+            continue;
+        }
+        std::size_t len = (c >> 5) == 0x06   ? 2
+                          : (c >> 4) == 0x0E ? 3
+                          : (c >> 3) == 0x1E ? 4
+                                             : 1;
+        if (len == 1 || i + len > n) {  // invalid lead / truncated: drop the byte
+            ++i;
+            continue;
+        }
+        std::uint32_t cp = c & (0xFF >> (len + 1));
+        for (std::size_t k = 1; k < len; ++k)
+            cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+        const bool drop = cp == 0xFFFC || cp == 0xFFFD || cp == 0xFEFF ||
+                          (cp >= 0x200B && cp <= 0x200F) ||
+                          (cp >= 0xFFF9 && cp <= 0xFFFB);
+        if (!drop) out.append(s, i, len);
+        i += len;
+    }
+    return out;
+}
+
 }  // namespace imsg

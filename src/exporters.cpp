@@ -154,6 +154,15 @@ const char* kHtmlStyle =
     "a.attachment{color:inherit}.bubble a{color:inherit;text-decoration:underline}"
     ".embed{width:100%;max-width:560px;height:315px;border:0;border-radius:.6rem;"
     "margin-top:.4rem;display:block}"
+    // YouTube hero card: 16:9 thumbnail + centered play button (click to play).
+    ".ytcard{position:relative;display:block;max-width:560px;margin-top:.4rem}"
+    ".ytcard .ytthumb{height:auto;aspect-ratio:16/9;object-fit:cover;margin-top:0}"
+    ".ytplay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);"
+    "font-size:3.2rem;line-height:1;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.6);"
+    "pointer-events:none}"
+    // Keep messages/media from splitting across PDF pages.
+    ".msg,.embed,.ytcard,img.attachment,video.attachment,.ogcard,.linkcard{"
+    "page-break-inside:avoid;break-inside:avoid}"
     ".linkcard{display:flex;align-items:center;gap:.6rem;max-width:560px;margin-top:"
     ".4rem;padding:.5rem .7rem;border:1px solid rgba(0,0,0,.12);border-radius:.6rem;"
     "background:#fff;text-decoration:none!important;color:#1d1d1f}"
@@ -357,6 +366,11 @@ std::string youtube_id(const std::string& url) {
     if (url.find("youtube.com") != std::string::npos) {
         p = url.find("v=");
         if (p != std::string::npos) return take_id(url, p + 2);
+        // /shorts/<id>, /embed/<id>, /live/<id>, /v/<id>
+        for (const std::string& seg : {"/shorts/", "/embed/", "/live/", "/v/"}) {
+            p = url.find(seg);
+            if (p != std::string::npos) return take_id(url, p + seg.size());
+        }
     }
     return "";
 }
@@ -386,9 +400,29 @@ std::string vimeo_id(const std::string& url) {
     return id;
 }
 
-std::string iframe(const std::string& src) {
-    return "<iframe class=\"embed\" src=\"" + src +
-           "\" loading=\"lazy\" allowfullscreen></iframe>";
+// A provider iframe with an explicit height (px) so each embed type gets a
+// sensible, consistent box instead of one fixed size that's wrong for some.
+std::string iframe(const std::string& src, int height) {
+    return "<iframe class=\"embed\" style=\"height:" + std::to_string(height) +
+           "px\" src=\"" + src + "\" loading=\"lazy\" allowfullscreen></iframe>";
+}
+
+// Spotify embed height: compact for a single track/episode, taller for
+// albums/playlists/shows (which list multiple items).
+int spotify_embed_height(const std::string& path) {
+    return (path.rfind("track/", 0) == 0 || path.rfind("episode/", 0) == 0) ? 152 : 352;
+}
+
+// A YouTube hero card: its thumbnail (always previews, in HTML and PDF) with a
+// play button, linking to the video. In HTML a tiny script (see html_head)
+// swaps it for an inline autoplay player on click; in PDF/no-JS it stays a
+// clickable thumbnail.
+std::string youtube_card(const std::string& id, const std::string& url) {
+    return "<a class=\"ytcard\" data-yt=\"" + id + "\" href=\"" + html_escape(url) +
+           "\" target=\"_blank\" rel=\"noopener noreferrer\">"
+           "<img class=\"embed ytthumb\" loading=\"lazy\" alt=\"YouTube video\" src=\""
+           "https://i.ytimg.com/vi/" + id +
+           "/hqdefault.jpg\"><span class=\"ytplay\" aria-hidden=\"true\">&#9654;</span></a>";
 }
 
 // Host of a URL, without scheme or "www." (e.g. "facebook.com").
@@ -526,7 +560,16 @@ std::string html_head(const std::string& title) {
        << "<meta charset=\"utf-8\">\n"
        << "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
        << "<title>" << html_escape(title) << "</title>\n"
-       << "<style>" << kHtmlStyle << "</style>\n</head>\n<body>\n";
+       << "<style>" << kHtmlStyle << "</style>\n"
+       // Click a YouTube hero card to swap its thumbnail for an inline player.
+       // No external scripts; ignored by PDF/no-JS viewers (thumbnail stays).
+       << "<script>document.addEventListener('click',function(e){"
+          "var a=e.target.closest&&e.target.closest('a.ytcard[data-yt]');if(!a)return;"
+          "e.preventDefault();var f=document.createElement('iframe');f.className='embed';"
+          "f.src='https://www.youtube.com/embed/'+a.getAttribute('data-yt')+'?autoplay=1';"
+          "f.allow='autoplay; encrypted-media';f.setAttribute('allowfullscreen','');"
+          "a.parentNode.replaceChild(f,a);});</script>\n"
+       << "</head>\n<body>\n";
     return os.str();
 }
 
@@ -567,11 +610,11 @@ std::string media_embeds_html(const std::string& text) {
         i = e;
         std::string id;
         if (!(id = youtube_id(url)).empty())
-            out += iframe("https://www.youtube.com/embed/" + id);
+            out += youtube_card(id, url);  // thumbnail hero, click-to-play
         else if (!(id = spotify_path(url)).empty())
-            out += iframe("https://open.spotify.com/embed/" + id);
+            out += iframe("https://open.spotify.com/embed/" + id, spotify_embed_height(id));
         else if (!(id = vimeo_id(url)).empty())
-            out += iframe("https://player.vimeo.com/video/" + id);
+            out += iframe("https://player.vimeo.com/video/" + id, 315);
         else {
             // Facebook, news, etc.: a rich Open Graph card when a resolver is
             // installed (GUI, opt-in) and the fetch succeeds, else the offline

@@ -71,6 +71,18 @@ void test_attributed_body() {
              "attributed: garbage");
 }
 
+void test_sanitize_text() {
+    using imsg::sanitize_text;
+    check_eq(sanitize_text("Hi\xEF\xBF\xBC there"), "Hi there",
+             "sanitize: drops U+FFFC object-replacement");
+    check_eq(sanitize_text("caf\xC3\xA9 \xE2\x98\x95"), "caf\xC3\xA9 \xE2\x98\x95",
+             "sanitize: keeps accented text + emoji");
+    check_eq(sanitize_text(std::string("a\x07" "b\tc\nd", 7)), "ab\tc\nd",
+             "sanitize: drops control chars, keeps tab/newline");
+    check_eq(sanitize_text("a\xE2\x80\x8B" "b"), "ab",
+             "sanitize: drops zero-width space U+200B");
+}
+
 void test_time_util() {
     std::time_t out = 0;
     check(!imsg::apple_time_to_epoch(0, out), "time: zero is invalid");
@@ -295,12 +307,23 @@ void test_linkify_and_embeds() {
     check_eq(imsg::linkify_html("a < b & c"), "a &lt; b &amp; c",
              "linkify: escapes non-URL text");
 
-    check(contains(imsg::media_embeds_html("x https://youtu.be/dQw4w9WgXcQ y"),
-                   "youtube.com/embed/dQw4w9WgXcQ"),
-          "embed: youtube");
+    {
+        const std::string yt =
+            imsg::media_embeds_html("x https://youtu.be/dQw4w9WgXcQ y");
+        check(contains(yt, "class=\"ytcard\"") && contains(yt, "data-yt=\"dQw4w9WgXcQ\"") &&
+                  contains(yt, "i.ytimg.com/vi/dQw4w9WgXcQ"),
+              "embed: youtube hero card (thumbnail + data-yt)");
+        // /shorts/ and /watch?v= forms also resolve
+        check(contains(imsg::media_embeds_html("https://www.youtube.com/shorts/ABCdef12345"),
+                       "data-yt=\"ABCdef12345\""),
+              "embed: youtube /shorts/ form");
+    }
     check(contains(imsg::media_embeds_html("https://open.spotify.com/track/abc123"),
                    "open.spotify.com/embed/track/abc123"),
           "embed: spotify");
+    check(contains(imsg::media_embeds_html("https://open.spotify.com/track/abc123"),
+                   "height:152px"),
+          "embed: spotify track uses compact height");
     check(contains(imsg::media_embeds_html("https://www.facebook.com/x"),
                    "class=\"linkcard\"") &&
               contains(imsg::media_embeds_html("https://www.facebook.com/x"),
@@ -329,7 +352,7 @@ void test_link_preview_resolver() {
     // Embeddable hosts (YouTube) keep their iframe and never hit the resolver.
     int before = calls;
     check(contains(imsg::media_embeds_html("https://youtu.be/dQw4w9WgXcQ"),
-                   "youtube.com/embed/"),
+                   "class=\"ytcard\""),
           "preview: youtube still embeds with a resolver set");
     check(calls == before, "preview: resolver not called for embeddable hosts");
 
@@ -496,6 +519,7 @@ void test_chat_title() {
 
 int main() {
     test_attributed_body();
+    test_sanitize_text();
     test_time_util();
     test_format_parsing();
     test_text_export();
