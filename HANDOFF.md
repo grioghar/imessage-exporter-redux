@@ -8,33 +8,31 @@ this file is the running state + how-to-continue.
 
 ## ⏩ LIVE HANDOFF (read me first)
 
-**Context handed off to Ollama at token-low. Current live state:**
-- **Released:** through **v0.3.0** (six installers each; Homebrew/Chocolatey at
-  v0.3.0). v0.3.0 added inline pictures/movies, Google Drive upload, encrypted
-  credential saving + Google client-JSON import, the reliable chat.db Browse
-  dialog, and the macOS "Fix Full Disk Access…" helper.
-- **In flight:** **v0.4.0** on branch `feat/0.4.0-tabbed-ui` → **PR #33** (open).
-  Adds the tabbed UI (Source/Filters/Output/Run) + Preferences pane (⌘,) +
-  Pause/Stop export, plus fixes: macOS **HEIC→JPEG transcode** (`sips`) so
-  pictures render, copy-attachments default-on/auto for HTML+PDF, link-only
-  messages show only the card (no bare URL above it), always-editable date
-  pickers, and a `date filter: …` log line. Version already bumped to 0.4.0.
-- **Finish the v0.4.0 release (immediate next steps):**
-  1. `gh pr checks 33` → when green, `gh pr merge 33 --rebase`. If red: open the
-     failing job, fix on the branch, commit, push, re-check until green.
-  2. `git checkout main && git pull`; `git tag -a v0.4.0 -m "v0.4.0 — tabbed UI,
-     Preferences, Pause/Stop, picture+date fixes"`; `git push origin v0.4.0`
-     (triggers `.github/workflows/package.yml` → six installers + the release).
-  3. After the package run succeeds: download + `sha256sum` the source tarball
-     (`archive/refs/tags/v0.4.0.tar.gz`), `iMessage-Exporter-macOS.dmg`,
-     `iMessage-Exporter-Setup.exe`; branch `chore/brew-choco-0.4.0`; update
-     `packaging/homebrew/imessage-exporter.rb` (url+sha256),
-     `imessage-exporter-app.rb` (version + dmg sha256),
-     `packaging/chocolatey/imessage-exporter.nuspec` (version) +
-     `tools/chocolateyinstall.ps1` (version + exe checksum64); PR → CI → merge.
-  4. Refresh this block + append the session log below.
-- **Then stop and summarize** unless grio asked for more. Do **NOT** archive the
-  project.
+**Handed off to Ollama at token-low. Current live state:**
+- **Versioning:** base `IMSG_VERSION = "0.5.2"` (in `include/imsg/version.hpp`) +
+  a **datetime sub-version**: the app reports `0.5.2.<YYYYMMDDHHMM>`. CMake derives
+  the datetime from the release tag (`vX.Y.Z.<YYYYMMDDHHMM>`) via `$GITHUB_REF_NAME`
+  / `git describe`, else build time. **Do NOT bump the base** unless grio says so.
+- **Canonical release: `v0.5.2.202606020119`** — published, all six installers,
+  in-app version reads exactly `0.5.2.202606020119`. (main @ `a4cdf74`.)
+- Shipped since v0.3.0: tabbed UI + Preferences pane, Pause/Stop, % status bar,
+  inline media + HEIC→JPEG, link cards, foolproof date filter, Google Drive
+  upload, encrypted creds + client-JSON import, **merged iCloud+Google+Mac
+  address book**, **contact photos** (vCard/iCloud + Google + macOS AddressBook
+  thumbnails) in message avatars + the people picker, "Export complete" dialog.
+- **Immediate next steps (finish this release's packaging + cleanup):**
+  1. **Point Homebrew + Chocolatey at `v0.5.2.202606020119`.** sha256 the tarball
+     (`archive/refs/tags/v0.5.2.202606020119.tar.gz`), `iMessage-Exporter-macOS.dmg`,
+     `iMessage-Exporter-Setup.exe`. Branch `chore/brew-choco-0.5.2-dt`; set
+     formula url+sha256, cask `version "0.5.2.202606020119"` + dmg sha256, choco
+     **nuspec `<version>0.5.2</version>`** (NuGet 4×Int32 can't hold the 12-digit
+     datetime — keep base), and in `chocolateyinstall.ps1` set `$tag =
+     'v0.5.2.202606020119'` for the download URL + exe `checksum64`. PR → CI → merge.
+  2. **Delete the superseded earlier build:**
+     `gh release delete v0.5.2.202606020111 --yes --cleanup-tag`.
+  3. Refresh this block + append the session log.
+- Full continue-prompt for the Ollama launcher:
+  `C:\Users\grio\imessage-continue-prompt.txt`. **Do NOT** archive the project.
 
 ## What this project is
 `grioghar/imessage-exporter-redux` — a C++17 tool that exports a macOS Messages
