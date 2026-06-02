@@ -364,7 +364,7 @@ scope for 0.7.0:
   message on the timeline can optionally show where you were when you sent it.
   Waze and the real-time Google Maps Timeline API have no public endpoint; the
   Takeout JSON is the only Google export path.
-- **Media compression and cloud offload** (via [grioghar/lightpress](https://github.com/grioghar/lightpress)).
+- **Media compression and cloud offload** (via [grioghar/lightpress](https://github.com/grioghar/lightpress) + [grioghar/ffmpeg](https://github.com/grioghar/ffmpeg)).
   A new sister library — `lightpress` — provides a zero-dependency C++17 JPEG/PNG
   encoder, EXIF metadata stripper, bilinear/bicubic resize, and MP4/MOV container
   rewriter that removes thumbnail tracks and cover-art atoms without re-encoding the
