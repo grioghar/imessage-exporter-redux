@@ -38,6 +38,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QSize>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -1000,6 +1001,11 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/contactsPath", contactsPath_->text());
     s.setValue("ui/logLevel", logLevel_->currentText());
     s.setValue("ui/people", selectedPeople_);
+    // Select-People "Hide inactive" filter. Owned by pickPeople() (the controls
+    // are dialog-local); preserve the stored values here so a settings rewrite
+    // keeps them and they sit beside the other ui/* keys.
+    s.setValue("ui/hideInactive", s.value("ui/hideInactive", false).toBool());
+    s.setValue("ui/inactiveDays", s.value("ui/inactiveDays", 180).toInt());
 }
 
 void MainWindow::loadSettings() {
@@ -1031,6 +1037,9 @@ void MainWindow::loadSettings() {
     peopleLabel_->setText(selectedPeople_.isEmpty()
                               ? "All conversations"
                               : QString("%1 selected").arg(selectedPeople_.size()));
+    // ui/hideInactive (bool, default false) + ui/inactiveDays (int, default 180)
+    // are read on demand by pickPeople() from QSettings, so there's nothing to
+    // restore into a widget here; the keys live beside the others for clarity.
     onSourceChanged();
     onContactsChanged();
 }
@@ -1184,6 +1193,26 @@ void MainWindow::pickPeople() {
     ctrlRow->addWidget(filterEdit, 1);
     layout->addLayout(ctrlRow);
 
+    // Inactive filter: hide people whose newest message is older than N days
+    // (or who were never texted), so a long contact list isn't cluttered by
+    // numbers/emails you haven't heard from in ages. Persisted in QSettings.
+    QSettings peopleSettings;
+    auto* inactiveRow = new QHBoxLayout;
+    auto* hideInactive = new QCheckBox("Hide inactive", &dlg);
+    hideInactive->setChecked(peopleSettings.value("ui/hideInactive", false).toBool());
+    auto* inactiveDays = new QSpinBox(&dlg);
+    inactiveDays->setRange(1, 3650);
+    inactiveDays->setSuffix(" days");
+    inactiveDays->setValue(peopleSettings.value("ui/inactiveDays", 180).toInt());
+    auto* inactiveCount = new QLabel(&dlg);  // "(K inactive hidden)"
+    inactiveCount->setEnabled(false);        // dimmed: it's an informational tally
+    inactiveRow->addWidget(hideInactive);
+    inactiveRow->addWidget(new QLabel("older than", &dlg));
+    inactiveRow->addWidget(inactiveDays);
+    inactiveRow->addStretch();
+    inactiveRow->addWidget(inactiveCount);
+    layout->addLayout(inactiveRow);
+
     auto* list = new QListWidget(&dlg);
     list->setIconSize(QSize(28, 28));
     list->setMinimumSize(460, 320);
@@ -1204,15 +1233,39 @@ void MainWindow::pickPeople() {
         }
     };
 
+    // A person is "inactive" when we never saw a message from them, or their
+    // newest one predates the cutoff. People with no stats entry have hasLast
+    // == false, so they fall in here too. Evaluated against a fresh "now" each
+    // repopulate so the cutoff tracks the current day/spinbox value.
+    auto isInactive = [&](const PersonRow& r, std::time_t now) {
+        if (!r.hasLast) return true;
+        const std::time_t cutoff =
+            static_cast<std::time_t>(inactiveDays->value()) * 86400;
+        return now - r.lastDate > cutoff;
+    };
+
     // Clears and repopulates the list from `rows`, applying the chosen sort and
     // the case-insensitive substring filter (matched against the shown text).
+    // When "Hide inactive" is on, inactive people are dropped entirely (so they
+    // can't be checked or exported) and tallied in the count label.
     auto repopulate = [&] {
         std::vector<const PersonRow*> view;
         view.reserve(rows.size());
         const QString needle = filterEdit->text().trimmed();
-        for (const PersonRow& r : rows)
+        const bool hide = hideInactive->isChecked();
+        const std::time_t now = std::time(nullptr);
+        int hidden = 0;
+        for (const PersonRow& r : rows) {
+            if (hide && isInactive(r, now)) {
+                ++hidden;
+                continue;
+            }
             if (needle.isEmpty() || r.display.contains(needle, Qt::CaseInsensitive))
                 view.push_back(&r);
+        }
+        inactiveCount->setText(hide && hidden
+                                   ? QString("(%1 inactive hidden)").arg(hidden)
+                                   : QString());
 
         const int mode = sortCombo->currentIndex();
         std::stable_sort(view.begin(), view.end(),
@@ -1256,6 +1309,10 @@ void MainWindow::pickPeople() {
             [&] { syncCheckedFromList(); repopulate(); });
     connect(filterEdit, &QLineEdit::textChanged, &dlg,
             [&] { syncCheckedFromList(); repopulate(); });
+    connect(hideInactive, &QCheckBox::toggled, &dlg,
+            [&] { syncCheckedFromList(); repopulate(); });
+    connect(inactiveDays, qOverload<int>(&QSpinBox::valueChanged), &dlg,
+            [&] { syncCheckedFromList(); repopulate(); });
     repopulate();
 
     auto* selRow = new QHBoxLayout;
@@ -1281,6 +1338,11 @@ void MainWindow::pickPeople() {
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout->addWidget(buttons);
     if (dlg.exec() != QDialog::Accepted) return;
+
+    // Remember the inactive-filter choice for next time (also mirrored in
+    // save/loadSettings so it's listed beside the other ui/* keys).
+    peopleSettings.setValue("ui/hideInactive", hideInactive->isChecked());
+    peopleSettings.setValue("ui/inactiveDays", inactiveDays->value());
 
     syncCheckedFromList();  // fold in any items hidden by an active filter
     selectedPeople_.clear();
