@@ -20,6 +20,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHash>
+#include <QIcon>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -29,11 +31,13 @@
 #include <QMessageBox>
 #include <QPageSize>
 #include <QPdfWriter>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSet>
 #include <QSettings>
+#include <QSize>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -83,6 +87,18 @@ void richTextDialog(QWidget* parent, const QString& title, const QString& html) 
     layout->addWidget(buttons);
     dlg.resize(580, 460);
     dlg.exec();
+}
+
+// Decodes a "data:<mime>;base64,<data>" URI into a small QIcon, or a null icon
+// when the URI isn't inline image data (e.g. an https URL we won't fetch here).
+QIcon iconFromDataUri(const QString& uri) {
+    const int comma = uri.indexOf("base64,");
+    if (!uri.startsWith("data:image", Qt::CaseInsensitive) || comma < 0) return QIcon();
+    const QByteArray bytes = QByteArray::fromBase64(uri.mid(comma + 7).toLatin1());
+    QPixmap pm;
+    if (bytes.isEmpty() || !pm.loadFromData(bytes)) return QIcon();
+    return QIcon(pm.scaled(28, 28, Qt::KeepAspectRatioByExpanding,
+                           Qt::SmoothTransformation));
 }
 }  // namespace
 
@@ -1071,6 +1087,7 @@ void MainWindow::pickPeople() {
     }
 
     QStringList people;
+    QHash<QString, QString> photoByDisp;  // display string -> photo data URI/URL
     try {
         // Keep raw handles (no set_contacts) so we can show "Name — number".
         imsg::MessagesDatabase db(db_path, opts.me_label);
@@ -1085,7 +1102,11 @@ void MainWindow::pickPeople() {
                 const QString disp =
                     nm.empty() ? handle
                                : QString::fromStdString(nm) + "  —  " + handle;
-                if (!seen.contains(disp)) { seen.insert(disp); people << disp; }
+                if (!seen.contains(disp)) {
+                    seen.insert(disp);
+                    people << disp;
+                    photoByDisp.insert(disp, QString::fromStdString(book.photo_for(p)));
+                }
             }
         }
     } catch (const imsg::DatabaseError& e) {
@@ -1101,10 +1122,13 @@ void MainWindow::pickPeople() {
                                  "(none checked = all):",
                                  &dlg));
     auto* list = new QListWidget(&dlg);
+    list->setIconSize(QSize(28, 28));
     for (const QString& p : people) {
         auto* item = new QListWidgetItem(p, list);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(selectedPeople_.contains(p) ? Qt::Checked : Qt::Unchecked);
+        const QIcon ic = iconFromDataUri(photoByDisp.value(p));  // contact photo preview
+        if (!ic.isNull()) item->setIcon(ic);
     }
     list->setMinimumSize(420, 320);
     layout->addWidget(list);
