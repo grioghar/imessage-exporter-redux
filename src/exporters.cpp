@@ -549,7 +549,7 @@ std::string html_conversation(const Chat& chat) {
 
     for (const Message& m : chat.messages) {
         const char* side = m.is_from_me ? "me" : "them";
-        os << "<div class=\"msg " << side << "\">"
+        os << "<div class=\"msg " << side << "\" id=\"msg-" << html_escape(m.guid) << "\">"
            << "<div class=\"info\">" << avatar_html(m.sender, m.avatar_uri) << "<span>"
            << html_escape(m.sender) << " &middot; " << html_escape(format_when(m))
            << "</span></div>"

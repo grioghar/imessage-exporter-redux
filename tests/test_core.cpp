@@ -16,6 +16,7 @@
 #include "imsg/models.hpp"
 #include "imsg/theme.hpp"
 #include "imsg/stats.hpp"
+#include "imsg/timeline.hpp"
 #include "imsg/time_util.hpp"
 #include "imsg/vcard.hpp"
 
@@ -693,6 +694,27 @@ void test_stats() {
     check(contains(sms_html, "sms-style"), "stats: SMS chat renders with sms-style class");
 }
 
+void test_timeline() {
+    imsg::Chat c1 = make_chat();
+    c1.chat_identifier = "alice";
+    imsg::Chat c2;
+    c2.service = "SMS"; c2.chat_identifier = "bob";
+    c2.participants = {"+15550001111"};
+    imsg::Message mx;
+    mx.is_from_me = false; mx.sender = "+15550001111";
+    mx.guid = "mx1"; mx.text = "test"; mx.has_date = true;
+    imsg::apple_time_to_epoch(726000000LL * 1000000000LL, mx.date);
+    c2.messages.push_back(mx);
+
+    const std::string h = imsg::render_timeline_html({c1, c2});
+    check(contains(h, "<!DOCTYPE html>"),      "timeline: doctype");
+    check(contains(h, "id=\"tl-root\""),       "timeline: root id");
+    check(contains(h, "id=\"tl-lo\""),         "timeline: slider lo");
+    check(contains(h, "class=\"msg-dot\""),    "timeline: msg-dot class");
+    check(contains(h, "data-t=\""),            "timeline: epoch data attr");
+    check(contains(h, "id=\"msg-"),             "timeline: message anchor id");
+}
+
 }  // namespace
 
 int main() {
@@ -725,6 +747,7 @@ int main() {
     test_chat_title();
     test_themes();
     test_stats();
+    test_timeline();
 
     if (g_failures == 0) {
         std::cout << "OK: all " << g_checks << " checks passed\n";

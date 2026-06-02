@@ -15,6 +15,7 @@
 #include "imsg/database.hpp"
 #include "imsg/log.hpp"
 #include "imsg/stats.hpp"
+#include "imsg/timeline.hpp"
 #include "imsg/time_util.hpp"
 
 namespace fs = std::filesystem;
@@ -296,6 +297,8 @@ ExportSummary export_database(const std::string& db_path,
         std::unordered_map<std::string, std::string> embed_cache;  // src -> data URI
         int written = 0;
         Stats stats;  // accumulated only when opts.stats_cover (written at the end)
+        // Chats with messages loaded; populated when timeline_page is enabled.
+        std::vector<Chat> timeline_chats;
 
         // Derive render options from the export options flags once up front.
         StatsRenderOpts srOpts;
@@ -351,6 +354,9 @@ ExportSummary export_database(const std::string& db_path,
             // Fold this conversation into the cover-page accumulator while its
             // bodies are in memory (they're cleared at the bottom of the loop).
             if (opts.stats_cover) stats_add(stats, chat);
+
+            // Stash a copy for the timeline page (messages still in memory).
+            if (opts.timeline_page) timeline_chats.push_back(chat);
 
             if (opts.copy_attachments) {
                 // Per-conversation folder named like the file stem (optionally hidden).
@@ -409,6 +415,26 @@ ExportSummary export_database(const std::string& db_path,
                 log_info("wrote statistics cover page: " + path.filename().string());
             } else {
                 log_warn("could not write statistics cover page to " + path.string());
+            }
+        }
+
+        // Timeline page: swimlane visualisation of every conversation.
+        // Named "00-timeline.html" so it sorts near the top of the output folder.
+        // A write failure is non-fatal.
+        if (opts.timeline_page) {
+            TimelineOptions tlOpts;
+            tlOpts.show_photos   = opts.timeline_photos;
+            tlOpts.show_me_photo = opts.timeline_me_photo;
+            tlOpts.show_previews = opts.timeline_previews;
+            tlOpts.density       = opts.timeline_density;
+
+            fs::path path = out_path(out_dir, "00-timeline.html");
+            std::ofstream tout(path, std::ios::binary);
+            if (tout) {
+                tout << render_timeline_html(timeline_chats, tlOpts, opts.me_photo_uri);
+                log_info("wrote timeline page: " + path.filename().string());
+            } else {
+                log_warn("could not write timeline page to " + path.string());
             }
         }
 
