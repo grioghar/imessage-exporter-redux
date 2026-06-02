@@ -84,6 +84,18 @@ void test_sanitize_text() {
              "sanitize: drops control chars, keeps tab/newline");
     check_eq(sanitize_text("a\xE2\x80\x8B" "b"), "ab",
              "sanitize: drops zero-width space U+200B");
+    // C1 controls (garbled typedstream bytes): stripped entirely.
+    check_eq(sanitize_text("A\xc2\x80" "B"), "AB",
+             "sanitize: drops C1 control U+0080");
+    // U+00A0 NO-BREAK SPACE: invisible phantom whitespace, stripped.
+    check_eq(sanitize_text("\xc2\xa0" "hello\xc2\xa0"), "hello",
+             "sanitize: drops NBSP U+00A0");
+    // U+2028 LINE SEPARATOR: invisible, stripped.
+    check_eq(sanitize_text("x\xe2\x80\xa8" "y"), "xy",
+             "sanitize: drops line separator U+2028");
+    // U+FFFE BMP non-character: stripped.
+    check_eq(sanitize_text("A\xef\xbf\xbe" "B"), "AB",
+             "sanitize: drops non-character U+FFFE");
 }
 
 void test_time_util() {

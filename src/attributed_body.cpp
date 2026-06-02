@@ -136,6 +136,25 @@ std::string sanitize_text(const std::string& s) {
         std::uint32_t cp = c & (0xFF >> (len + 1));
         for (std::size_t k = 1; k < len; ++k)
             cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+        // C1 controls (U+0080–U+009F) and NBSP (U+00A0): garbled typedstream
+        // fragments that look like random characters; NBSP causes phantom text.
+        if (len == 2 && c == 0xC2) {
+            unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+            if (c1 <= 0xA0) { i += 2; continue; }  // strip C1 + NBSP
+        }
+        // U+2028 LINE SEPARATOR (0xE2 0x80 0xA8) and U+2029 PARAGRAPH SEPARATOR
+        // (0xE2 0x80 0xA9): invisible line-break signals that break text flow.
+        if (len == 3 && c == 0xE2 &&
+            static_cast<unsigned char>(s[i + 1]) == 0x80) {
+            unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+            if (c2 == 0xA8 || c2 == 0xA9) { i += 3; continue; }
+        }
+        // U+FFFE and U+FFFF (BMP non-characters, 0xEF 0xBF 0xBE/0xBF).
+        if (len == 3 && c == 0xEF &&
+            static_cast<unsigned char>(s[i + 1]) == 0xBF) {
+            unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+            if (c2 == 0xBE || c2 == 0xBF) { i += 3; continue; }
+        }
         const bool drop = cp == 0xFFFC || cp == 0xFFFD || cp == 0xFEFF ||
                           (cp >= 0x200B && cp <= 0x200F) ||
                           (cp >= 0xFFF9 && cp <= 0xFFFB);

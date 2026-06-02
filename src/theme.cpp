@@ -74,7 +74,11 @@ const char* kBaseCss =
     "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"
     "overflow:hidden}"
     ".ogcard-host{color:#6e6e73;font-size:.72rem;margin-top:.3rem;"
-    "text-transform:uppercase;letter-spacing:.02em}";
+    "text-transform:uppercase;letter-spacing:.02em}"
+    // SMS/RCS conversations: sent bubbles use Apple's iOS green (#34c759) so
+    // they visually match the native Messages green-bubble experience.
+    ".sms-style .msg.me .bubble{background:#34c759;color:#000}"
+    ".sms-style .msg.me .bubble a{color:#006400}";
 
 // --- Per-theme override blocks ---------------------------------------------
 // Each retints the base by overriding background, fonts, bubble colors, and the
