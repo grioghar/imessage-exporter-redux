@@ -20,19 +20,17 @@ this file is the running state + how-to-continue.
   upload, encrypted creds + client-JSON import, **merged iCloud+Google+Mac
   address book**, **contact photos** (vCard/iCloud + Google + macOS AddressBook
   thumbnails) in message avatars + the people picker, "Export complete" dialog.
-- **Immediate next steps (finish this release's packaging + cleanup):**
-  1. **Point Homebrew + Chocolatey at `v0.5.2.202606020119`.** sha256 the tarball
-     (`archive/refs/tags/v0.5.2.202606020119.tar.gz`), `iMessage-Exporter-macOS.dmg`,
-     `iMessage-Exporter-Setup.exe`. Branch `chore/brew-choco-0.5.2-dt`; set
-     formula url+sha256, cask `version "0.5.2.202606020119"` + dmg sha256, choco
-     **nuspec `<version>0.5.2</version>`** (NuGet 4×Int32 can't hold the 12-digit
-     datetime — keep base), and in `chocolateyinstall.ps1` set `$tag =
-     'v0.5.2.202606020119'` for the download URL + exe `checksum64`. PR → CI → merge.
-  2. **Delete the superseded earlier build:**
-     `gh release delete v0.5.2.202606020111 --yes --cleanup-tag`.
-  3. Refresh this block + append the session log.
-- Full continue-prompt for the Ollama launcher:
-  `C:\Users\grio\imessage-continue-prompt.txt`. **Do NOT** archive the project.
+- **Packaging:** Homebrew + Chocolatey pointing at `v0.5.2.202606020119` (PR #46,
+  merging). Choco package version stays `0.5.2` (NuGet 4×Int32 limit). Old build
+  `v0.5.2.202606020111` deleted. **No outstanding work.** Wait for grio's next
+  request before starting anything new.
+- **Ollama launch prereq (missing on this machine 2026-06-02):** `ccr`
+  (claude-code-router) and Node/npm are not installed. Install Node.js →
+  `npm i -g @musistudio/claude-code-router` → configure an `ollama` provider
+  → then `pwsh -File C:\Users\grio\imessage-continue-with-ollama.ps1` works.
+  The launcher script now calls `claude --model qwen3.6` directly (updated by
+  grio), so once `ccr` is wired up it will route correctly.
+- **Do NOT** archive the project.
 
 ## What this project is
 `grioghar/imessage-exporter-redux` — a C++17 tool that exports a macOS Messages
