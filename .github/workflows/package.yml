@@ -209,6 +209,10 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:40
     steps:
+      # The fedora:40 image ships without git; without it actions/checkout falls
+      # back to the REST API tarball, which cannot fetch submodules (lightpress).
+      - name: Install git (enables submodule checkout in the container)
+        run: dnf install -y git
       - uses: actions/checkout@v4
         with:
           submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
