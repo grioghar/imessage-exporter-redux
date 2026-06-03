@@ -46,6 +46,42 @@ else()
   add_compile_options(-Wall -Wextra)
 endif()
 
+# --- Aggressive optimization for Release builds -----------------------------
+# Lean, fast binaries without sacrificing portability. We deliberately do NOT
+# use -march=native: the release artifacts are distributed to other machines,
+# so the build must run on any CPU of the target family. LTO/IPO is enabled
+# only when the toolchain reports support for it.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg)
+if(_ipo_ok)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)  # /GL+/LTCG or -flto
+  message(STATUS "imsg: link-time optimization (IPO/LTO) enabled for Release")
+else()
+  message(STATUS "imsg: IPO/LTO unavailable: ${_ipo_msg}")
+endif()
+
+if(MSVC)
+  # /O2 speed, /Ob3 aggressive inlining, /Gy COMDAT folding; linker dead-strip.
+  add_compile_options($<$<CONFIG:Release>:/O2>
+                      $<$<CONFIG:Release>:/Ob3>
+                      $<$<CONFIG:Release>:/Gy>)
+  add_link_options($<$<CONFIG:Release>:/OPT:REF>
+                   $<$<CONFIG:Release>:/OPT:ICF>)
+else()
+  # -O3, per-function/-data sections + GC so unused code is dropped from the
+  # final binary; omit the frame pointer for leaner stack frames.
+  add_compile_options($<$<CONFIG:Release>:-O3>
+                      $<$<CONFIG:Release>:-ffunction-sections>
+                      $<$<CONFIG:Release>:-fdata-sections>
+                      $<$<CONFIG:Release>:-fomit-frame-pointer>)
+  if(APPLE)
+    add_link_options($<$<CONFIG:Release>:-Wl,-dead_strip>)
+  else()
+    add_link_options($<$<CONFIG:Release>:-Wl,--gc-sections>
+                     $<$<CONFIG:Release>:-s>)  # strip symbols
+  endif()
+endif()
+
 # --- Core library: zero external dependencies, fully unit-testable ----------
 add_library(imsg_core STATIC
   src/log.cpp
