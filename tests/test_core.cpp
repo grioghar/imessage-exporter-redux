@@ -14,6 +14,7 @@
 
 #include "imsg/attributed_body.hpp"
 #include "imsg/contact_book.hpp"
+#include "imsg/crypto.hpp"
 #include "imsg/exporters.hpp"
 #include "imsg/location.hpp"
 #include "imsg/log.hpp"
@@ -863,6 +864,195 @@ void test_location_render() {
           "loc-render: badge shows confidence + label");
 }
 
+// --- Crypto: hex<->bytes helpers and known-answer tests ---------------------
+
+std::string to_hex(const std::vector<unsigned char>& v) {
+    static const char* d = "0123456789abcdef";
+    std::string s;
+    s.reserve(v.size() * 2);
+    for (unsigned char b : v) {
+        s += d[(b >> 4) & 0xF];
+        s += d[b & 0xF];
+    }
+    return s;
+}
+
+std::vector<unsigned char> from_hex(const std::string& h) {
+    auto nyb = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return 0;
+    };
+    std::vector<unsigned char> v;
+    v.reserve(h.size() / 2);
+    for (std::size_t i = 0; i + 1 < h.size(); i += 2)
+        v.push_back(static_cast<unsigned char>((nyb(h[i]) << 4) | nyb(h[i + 1])));
+    return v;
+}
+
+std::string sha256_hex(const std::string& s) {
+    return to_hex(imsg::sha256(reinterpret_cast<const unsigned char*>(s.data()),
+                               s.size()));
+}
+
+void test_crypto() {
+    // --- SHA-256 (FIPS 180-4) KATs ---
+    check_eq(sha256_hex("abc"),
+             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+             "sha256: abc");
+    check_eq(sha256_hex(""),
+             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+             "sha256: empty");
+
+    // --- PBKDF2-HMAC-SHA256 (RFC 8018) KATs ---
+    {
+        const std::string salt = "salt";
+        const auto* sp = reinterpret_cast<const unsigned char*>(salt.data());
+        check_eq(to_hex(imsg::pbkdf2_hmac_sha256("password", sp, salt.size(), 1, 32)),
+                 "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b",
+                 "pbkdf2: iter=1 dkLen=32");
+        check_eq(to_hex(imsg::pbkdf2_hmac_sha256("password", sp, salt.size(), 2, 32)),
+                 "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43",
+                 "pbkdf2: iter=2 dkLen=32");
+    }
+
+    // --- AES-256-GCM (NIST SP 800-38D) KATs ---
+    {
+        // Test 1: 32 zero key, 12 zero IV, empty AAD, empty plaintext -> just the tag.
+        const std::vector<unsigned char> key(32, 0), iv(12, 0);
+        const auto out = imsg::aes256_gcm_encrypt(key.data(), iv.data(), nullptr, 0,
+                                                  nullptr, 0);
+        check_eq(to_hex(out), "530f8afbc74536b9a963b4f1c4cb738b",
+                 "gcm: T1 empty pt -> tag only");
+    }
+    {
+        // Test 2: 16 zero plaintext bytes -> known ciphertext || tag.
+        const std::vector<unsigned char> key(32, 0), iv(12, 0), pt(16, 0);
+        const auto out = imsg::aes256_gcm_encrypt(key.data(), iv.data(), nullptr, 0,
+                                                  pt.data(), pt.size());
+        check_eq(to_hex(out),
+                 "cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919",
+                 "gcm: T2 16 zero bytes -> ct||tag");
+    }
+
+    // --- Round-trip: multi-block message with AAD ---
+    {
+        const auto key = from_hex(
+            "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+        const auto iv = from_hex("cafebabefacedbaddecaf888");
+        const std::string aad_s = "header-metadata-v1";
+        const auto aad = std::vector<unsigned char>(aad_s.begin(), aad_s.end());
+        const std::string msg =
+            "The quick brown fox jumps over the lazy dog, then does it again to "
+            "cross a second AES block boundary cleanly.";
+        const auto pt = std::vector<unsigned char>(msg.begin(), msg.end());
+
+        const auto ct = imsg::aes256_gcm_encrypt(key.data(), iv.data(), aad.data(),
+                                                 aad.size(), pt.data(), pt.size());
+        check(ct.size() == pt.size() + 16, "gcm: ciphertext carries 16-byte tag");
+        const auto rt = imsg::aes256_gcm_decrypt(key.data(), iv.data(), aad.data(),
+                                                 aad.size(), ct.data(), ct.size());
+        check_eq(std::string(rt.begin(), rt.end()), msg,
+                 "gcm: round-trip recovers multi-block plaintext with AAD");
+
+        // Flip one tag byte -> authentication must fail (empty result).
+        auto tampered = ct;
+        tampered[tampered.size() - 1] ^= 0x01;
+        const auto bad = imsg::aes256_gcm_decrypt(key.data(), iv.data(), aad.data(),
+                                                  aad.size(), tampered.data(),
+                                                  tampered.size());
+        check(bad.empty(), "gcm: flipped tag byte fails authentication");
+
+        // Wrong AAD -> also fails.
+        const std::string aad2_s = "header-metadata-v2";
+        const auto aad2 = std::vector<unsigned char>(aad2_s.begin(), aad2_s.end());
+        const auto bad2 = imsg::aes256_gcm_decrypt(key.data(), iv.data(), aad2.data(),
+                                                   aad2.size(), ct.data(), ct.size());
+        check(bad2.empty(), "gcm: wrong AAD fails authentication");
+    }
+
+    // --- Base64 round-trips for lengths 0,1,2,3 (and a binary blob) ---
+    {
+        for (std::size_t n = 0; n <= 3; ++n) {
+            std::vector<unsigned char> bytes(n);
+            for (std::size_t i = 0; i < n; ++i)
+                bytes[i] = static_cast<unsigned char>(0x10 + i * 0x55);
+            const std::string enc = imsg::base64_encode(bytes.data(), bytes.size());
+            const auto dec = imsg::base64_decode(enc);
+            check_eq(to_hex(dec), to_hex(bytes),
+                     "base64: round-trip len=" + std::to_string(n));
+        }
+        // Known vector: "Man" -> "TWFu"; all 256 byte values round-trip.
+        const unsigned char man[] = {'M', 'a', 'n'};
+        check_eq(imsg::base64_encode(man, 3), "TWFu", "base64: 'Man' -> TWFu");
+        std::vector<unsigned char> all(256);
+        for (int i = 0; i < 256; ++i) all[i] = static_cast<unsigned char>(i);
+        check_eq(to_hex(imsg::base64_decode(imsg::base64_encode(all.data(), all.size()))),
+                 to_hex(all), "base64: all 256 byte values round-trip");
+    }
+
+    // --- encrypt_with_password then decrypt recovers the plaintext ---
+    {
+        const std::string password = "correct horse battery staple";
+        const std::string secret =
+            "<html><body>Top secret export with \"quotes\" & <tags> and a newline\n"
+            "spanning several AES blocks so CTR mode is exercised end to end.</body></html>";
+        // Small iteration count keeps the test fast; the path is identical.
+        const imsg::EncryptedBlob blob =
+            imsg::encrypt_with_password(password, secret, /*iterations=*/2048);
+        check(blob.iterations == 2048, "envelope: iterations recorded");
+
+        const auto salt = imsg::base64_decode(blob.salt_b64);
+        const auto iv = imsg::base64_decode(blob.iv_b64);
+        const auto ct = imsg::base64_decode(blob.ciphertext_b64);
+        check(salt.size() == 16, "envelope: 16-byte salt");
+        check(iv.size() == 12, "envelope: 12-byte iv");
+
+        const auto key = imsg::pbkdf2_hmac_sha256(password, salt.data(), salt.size(),
+                                                  blob.iterations, 32);
+        const auto pt = imsg::aes256_gcm_decrypt(key.data(), iv.data(), nullptr, 0,
+                                                 ct.data(), ct.size());
+        check_eq(std::string(pt.begin(), pt.end()), secret,
+                 "envelope: encrypt_with_password round-trips");
+
+        // Wrong password yields a different key -> tag mismatch -> empty.
+        const auto badkey = imsg::pbkdf2_hmac_sha256("wrong", salt.data(), salt.size(),
+                                                     blob.iterations, 32);
+        const auto badpt = imsg::aes256_gcm_decrypt(badkey.data(), iv.data(), nullptr,
+                                                    0, ct.data(), ct.size());
+        check(badpt.empty(), "envelope: wrong password fails to decrypt");
+
+        // Each call must use fresh random salt + iv (no static nonce reuse).
+        const imsg::EncryptedBlob blob2 =
+            imsg::encrypt_with_password(password, secret, 2048);
+        check(blob2.salt_b64 != blob.salt_b64 && blob2.iv_b64 != blob.iv_b64,
+              "envelope: fresh random salt + iv per call");
+    }
+
+    // --- Self-decrypting HTML embeds the ciphertext + Web Crypto, hides plaintext ---
+    {
+        const std::string page =
+            imsg::self_decrypting_html("hunter2", "<p>hi</p>", /*iterations=*/2048);
+        check(contains(page, "crypto.subtle"), "selfhtml: uses window.crypto.subtle");
+        check(contains(page, "PBKDF2") && contains(page, "AES-GCM"),
+              "selfhtml: derives key via PBKDF2 + AES-GCM");
+        check(!contains(page, "<p>hi</p>"),
+              "selfhtml: plaintext is not present in the page");
+        check(contains(page, "Wrong password"),
+              "selfhtml: shows a wrong-password message");
+
+        // The embedded base64 ciphertext is present and decrypts back to the input.
+        const imsg::EncryptedBlob b =
+            imsg::encrypt_with_password("hunter2", "<p>hi</p>", 2048);
+        // (b is a fresh envelope with different salt/iv; we can't string-match it,
+        // so instead assert the page carries *a* base64 payload variable.)
+        check(contains(page, "CT_B64=\""),
+              "selfhtml: embeds a base64 ciphertext variable");
+        (void)b;
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -901,6 +1091,7 @@ int main() {
     test_location();
     test_location_render();
     test_timeline();
+    test_crypto();
 
     if (g_failures == 0) {
         std::cout << "OK: all " << g_checks << " checks passed\n";
