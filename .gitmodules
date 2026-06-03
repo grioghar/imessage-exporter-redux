@@ -1,0 +1,3 @@
+[submodule "vendor/lightpress"]
+	path = vendor/lightpress
+	url = https://github.com/grioghar/lightpress.git

@@ -18,6 +18,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.*'
@@ -81,6 +83,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - name: Install SQLite3 (vcpkg)
         run: vcpkg install sqlite3:x64-windows
       - uses: jurplel/install-qt-action@v4
@@ -125,6 +129,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - name: Install deps
         run: |
           sudo apt-get update
@@ -178,6 +184,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - name: Install build deps (distro Qt)
         run: |
           sudo apt-get update
@@ -202,6 +210,8 @@ jobs:
     container: fedora:40
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - name: Install build deps (distro Qt)
         run: |
           dnf install -y cmake gcc-c++ qt6-qtbase-devel qt6-qtsvg-devel \
@@ -224,6 +234,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - uses: snapcore/action-build@v1
         id: snapcraft
       - uses: actions/upload-artifact@v4

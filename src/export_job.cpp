@@ -1,15 +1,18 @@
 #include "imsg/export_job.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include "imsg/compress.hpp"
 #include "imsg/contact_store.hpp"
 #include "imsg/contacts.hpp"
 #include "imsg/crypto.hpp"
@@ -95,6 +98,163 @@ std::string expand_user_path(const std::string& path) {
     return std::string(home) + path.substr(1);
 }
 
+// Lower-cased file extension (with the dot), for media-type classification.
+std::string lower_extension(const std::string& path) {
+    std::string ext = fs::path(fs::u8path(path)).extension().string();
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext;
+}
+
+// Coarse media classification used by the A/B comparison sampler.
+enum class MediaKind { Other, Image, Video };
+MediaKind classify_media(const std::string& path) {
+    const std::string e = lower_extension(path);
+    if (e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".gif" ||
+        e == ".heic" || e == ".heif" || e == ".webp")
+        return MediaKind::Image;
+    if (e == ".mp4" || e == ".m4v" || e == ".mov")
+        return MediaKind::Video;
+    return MediaKind::Other;
+}
+
+// Builds the TEMPORARY "image-movie-comparison/" A/B tuning folder. For up to N
+// files of each media type it copies the ORIGINAL and writes the alternative
+// encodings side by side (NAME.original.ext / NAME.lightpress.ext /
+// NAME.ffmpeg.ext) so the user can eyeball lightpress-vs-ffmpeg quality/size
+// and tune the compression settings. Entirely best-effort: a missing ffmpeg
+// simply omits the .ffmpeg.* variants; any failure is logged and skipped.
+class MediaComparison {
+  public:
+    MediaComparison(const std::string& out_dir, int samples_per_type)
+        : dir_(fs::u8path(out_dir) / fs::u8path("image-movie-comparison")),
+          limit_(samples_per_type) {}
+
+    // Offers `src` (an existing source file of kind `kind`) for sampling. The
+    // first `limit_` of each kind are materialized; the rest are ignored.
+    void offer(const std::string& src, MediaKind kind, const ExportOptions& opts) {
+        if (kind == MediaKind::Image) {
+            if (img_done_ >= limit_) return;
+        } else if (kind == MediaKind::Video) {
+            if (vid_done_ >= limit_) return;
+        } else {
+            return;
+        }
+        if (!ensure_dir()) return;
+
+        std::error_code ec;
+        const fs::path srcp = fs::u8path(src);
+        const std::string stem = srcp.stem().string();
+        const std::string ext = srcp.extension().string();
+        // Unique-ish base name so two "IMG.jpg" from different folders don't clash.
+        const int idx = (kind == MediaKind::Image ? img_done_ : vid_done_) + 1;
+        const std::string base =
+            (stem.empty() ? "file" : stem) + "-" + std::to_string(idx);
+
+        // 1) Original, verbatim.
+        const fs::path orig_dest = dir_ / fs::u8path(base + ".original" + ext);
+        fs::copy_file(srcp, orig_dest, fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            log_warn("comparison: could not copy original " + srcp.filename().string());
+            return;  // nothing to compare against; don't count this sample
+        }
+
+        if (kind == MediaKind::Image) {
+            // 2) lightpress: copy the original, then re-encode that copy in place.
+            const fs::path lp_dest = dir_ / fs::u8path(base + ".lightpress" + ext);
+            fs::copy_file(srcp, lp_dest, fs::copy_options::overwrite_existing, ec);
+            if (!ec && is_compressible_image(lp_dest.string())) {
+                compress_image(lp_dest.string(), opts.compress_quality,
+                               opts.compress_strip_exif);
+            }
+            // 3) ffmpeg image re-encode (JPEG), only if ffmpeg is on PATH.
+            ffmpeg_variant(src, dir_ / fs::u8path(base + ".ffmpeg.jpg"), "-q:v 3");
+            ++img_done_;
+        } else {  // Video: lightpress has no video codec, so only original + ffmpeg.
+            ffmpeg_variant(src, dir_ / fs::u8path(base + ".ffmpeg.mp4"),
+                           "-c:v libx265 -crf 28");
+            ++vid_done_;
+        }
+    }
+
+  private:
+    bool ensure_dir() {
+        if (created_) return ok_;
+        created_ = true;
+        std::error_code ec;
+        fs::create_directories(dir_, ec);
+        ok_ = !ec;
+        if (!ok_) {
+            log_warn("comparison: could not create " + dir_.string());
+            return false;
+        }
+        // Drop a README explaining this folder is a throwaway tuning aid.
+        std::ofstream rd(dir_ / fs::u8path("README.txt"), std::ios::binary);
+        if (rd) {
+            rd << "image-movie-comparison/ — TEMPORARY A/B tuning aid\n"
+                  "====================================================\n\n"
+                  "This folder is NOT part of your export. It holds a small sample of\n"
+                  "media encoded three ways so you can compare quality and file size:\n\n"
+                  "  NAME.original.<ext>    the untouched source file\n"
+                  "  NAME.lightpress.<ext>  re-encoded by lightpress (images only)\n"
+                  "  NAME.ffmpeg.<ext>      re-encoded by ffmpeg, if ffmpeg is installed\n"
+                  "                         (images -> JPEG -q:v 3; videos -> H.265 crf 28)\n\n"
+                  "Open the originals next to the re-encodes, pick the quality/size\n"
+                  "trade-off you like, then set the compression options accordingly.\n\n"
+                  "SAFE TO DELETE: once you are happy with the settings, delete this\n"
+                  "entire folder. Nothing else in the export references it.\n";
+        }
+        return ok_;
+    }
+
+    // Quiet redirect for child processes (stdout+stderr to the null device).
+    static const char* dev_null() {
+#ifdef _WIN32
+        return " >NUL 2>&1";
+#else
+        return " >/dev/null 2>&1";
+#endif
+    }
+
+    // Probe for ffmpeg once (std::system("ffmpeg -version")), cache the result.
+    bool ffmpeg_ok() {
+        if (ffmpeg_probed_) return ffmpeg_present_;
+        ffmpeg_probed_ = true;
+        ffmpeg_present_ =
+            std::system((std::string("ffmpeg -version") + dev_null()).c_str()) == 0;
+        if (!ffmpeg_present_)
+            log_info("comparison: ffmpeg not found on PATH — emitting "
+                     "original + lightpress variants only");
+        return ffmpeg_present_;
+    }
+
+    // Writes one ffmpeg-encoded variant `in` -> `out` with the given codec args.
+    // No-op when ffmpeg is unavailable. Skips paths containing a double quote so
+    // the shell command can't be broken out of. Best-effort: failures are logged
+    // and ignored (the original + lightpress variants still stand).
+    void ffmpeg_variant(const std::string& in, const fs::path& out_path,
+                        const std::string& codec_args) {
+        if (!ffmpeg_ok()) return;
+        const std::string out = out_path.string();
+        if (in.find('"') != std::string::npos || out.find('"') != std::string::npos) {
+            log_warn("comparison: skipping ffmpeg variant for a path with a quote");
+            return;
+        }
+        const std::string cmd = "ffmpeg -loglevel error -y -i \"" + in + "\" " +
+                                codec_args + " \"" + out + "\"" + dev_null();
+        if (std::system(cmd.c_str()) != 0)
+            log_warn("comparison: ffmpeg variant failed (skipped)");
+    }
+
+    fs::path dir_;
+    int limit_ = 0;
+    int img_done_ = 0;
+    int vid_done_ = 0;
+    bool created_ = false;
+    bool ok_ = false;
+    bool ffmpeg_probed_ = false;
+    bool ffmpeg_present_ = false;
+};
+
 // Copies a conversation's attachment files into a per-conversation folder
 // <out_dir>/<adir>/ (adir is the conversation's file stem, optionally dot-hidden)
 // and records each copied file's output-relative path on the Attachment, so the
@@ -104,7 +264,9 @@ std::string expand_user_path(const std::string& path) {
 int copy_chat_attachments(Chat& chat, const std::string& out_dir,
                           const std::string& adir,
                           std::unordered_map<std::string, std::string>& seen_src,
-                          std::unordered_set<std::string>& used_rel) {
+                          std::unordered_set<std::string>& used_rel,
+                          const ExportOptions& opts, ExportSummary& summary,
+                          MediaComparison* cmp) {
     int copied = 0;
     for (Message& m : chat.messages) {
         for (Attachment& a : m.attachments) {
@@ -119,6 +281,10 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
 
             std::error_code ec;
             if (!fs::exists(src, ec) || ec) continue;  // source unavailable
+
+            // Feed the A/B comparison sampler the ORIGINAL source (best-effort,
+            // bounded to opts.media_comparison_samples of each media kind).
+            if (cmp) cmp->offer(src, classify_media(src), opts);
 
             std::string base = fs::path(src).filename().string();
             if (base.empty()) base = "file";
@@ -164,6 +330,26 @@ int copy_chat_attachments(Chat& chat, const std::string& out_dir,
             a.copied_path = rel;
             ++copied;
             log_info("copied attachment: " + fs::path(rel).filename().string());
+
+            // Re-compress the just-copied image in place (JPEG/PNG only; other
+            // types are skipped inside compress_image). Non-fatal: on any error
+            // the original copy is kept. Accumulate the savings for the report.
+            if (opts.compress_media) {
+                const std::string dest = out_path(out_dir, rel).string();
+                if (is_compressible_image(dest)) {
+                    CompressResult cr =
+                        compress_image(dest, opts.compress_quality,
+                                       opts.compress_strip_exif);
+                    summary.media_bytes_before += cr.bytes_before;
+                    summary.media_bytes_after += cr.bytes_after;
+                    if (cr.changed) {
+                        ++summary.media_files_compressed;
+                        log_info("compressed " + fs::path(rel).filename().string() +
+                                 ": " + std::to_string(cr.bytes_before) + " -> " +
+                                 std::to_string(cr.bytes_after) + " bytes");
+                    }
+                }
+            }
         }
     }
     return copied;
@@ -402,6 +588,12 @@ ExportSummary export_database(const std::string& db_path,
         std::unordered_set<std::string> used_attach;         // attachment rel paths
         std::unordered_map<std::string, std::string> seen_src;  // src -> rel path
         std::unordered_map<std::string, std::string> embed_cache;  // src -> data URI
+        // A/B comparison sampler (lightpress vs ffmpeg) — only when requested and
+        // attachments are being copied (it samples copied-attachment sources).
+        std::unique_ptr<MediaComparison> comparison;
+        if (opts.media_comparison && opts.copy_attachments)
+            comparison = std::make_unique<MediaComparison>(
+                out_dir, std::max(0, opts.media_comparison_samples));
         int written = 0;
         Stats stats;  // accumulated only when opts.stats_cover (written at the end)
         // Chats with messages loaded; populated when timeline_page is enabled.
@@ -494,7 +686,8 @@ ExportSummary export_database(const std::string& db_path,
                 const std::string adir =
                     (opts.hidden_attachment_dir ? "." : "") + slug;
                 summary.attachments_copied +=
-                    copy_chat_attachments(chat, out_dir, adir, seen_src, used_attach);
+                    copy_chat_attachments(chat, out_dir, adir, seen_src, used_attach,
+                                          opts, summary, comparison.get());
             }
             if (opts.embed_attachments) embed_chat_attachments(chat, embed_cache);
 
@@ -548,9 +741,29 @@ ExportSummary export_database(const std::string& db_path,
         // failure here is non-fatal — the conversations are already on disk.
         if (opts.stats_cover) {
             fs::path path = out_path(out_dir, "00-statistics.html");
+            std::string page = render_stats_html(stats, srOpts);
+            // If media compression ran, splice the crypto-free "space saved"
+            // report into the page (inside the .wrap, just before </body>) so it
+            // appears on the cover. Done before any encryption rewraps the file.
+            if (opts.compress_media && summary.media_bytes_before > 0) {
+                std::string frag = render_space_saved_html(summary.media_bytes_before,
+                                                           summary.media_bytes_after,
+                                                           summary.media_files_compressed);
+                if (!frag.empty()) {
+                    std::size_t pos = page.rfind("</body>");
+                    if (pos != std::string::npos) {
+                        // Tuck it inside the closing .wrap </div> when present.
+                        std::size_t div = page.rfind("</div>", pos);
+                        std::size_t at = (div != std::string::npos && div < pos) ? div : pos;
+                        page.insert(at, frag);
+                    } else {
+                        page += frag;  // unexpected layout: append as a fallback
+                    }
+                }
+            }
             std::ofstream out(path, std::ios::binary);
             if (out) {
-                out << render_stats_html(stats, srOpts);
+                out << page;
                 out.close();  // flush before any in-place encryption
                 log_info("wrote statistics cover page: " + path.filename().string());
                 if (opts.encrypt_output && !opts.encrypt_password.empty())
