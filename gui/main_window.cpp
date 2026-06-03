@@ -9,6 +9,7 @@
 #include <QDate>
 #include <QDateEdit>
 #include <QDateTime>
+#include <QDateTimeEdit>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -38,6 +39,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QSize>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -159,26 +161,31 @@ MainWindow::MainWindow()
     auto* filForm = new QFormLayout(filtersPage);
     // The date fields themselves arm the filter — no separate checkboxes (which
     // confused people). "From" left at its "(any start)" sentinel = no lower
-    // bound; "To" left at today = through now. Picking a real date turns that
-    // bound on. The live summary below always says exactly what will be exported.
+    // bound; "To" left at the current time = through now. Picking a real
+    // date/time turns that bound on. The live summary below always says exactly
+    // what will be exported.
     auto* sinceRow = new QHBoxLayout;
-    since_ = new QDateEdit;
-    since_->setDisplayFormat("yyyy-MM-dd");
+    // Second-precision date+time pickers. The minimum/maximum bounds double as the
+    // "off" sentinels: since_ at its minimum = "(any start)" (no lower bound);
+    // until_ at/after now = "through now" (no upper bound). buildInputs() converts
+    // the chosen QDateTime to epoch seconds via toSecsSinceEpoch().
+    since_ = new QDateTimeEdit;
+    since_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
     since_->setCalendarPopup(true);
-    since_->setMinimumDate(QDate(2001, 1, 1));         // Apple-time epoch start
-    since_->setMaximumDate(QDate::currentDate());
-    since_->setSpecialValueText("(any start)");        // shown at minimumDate
-    since_->setDate(since_->minimumDate());            // default: no lower bound
-    since_->setToolTip("Only export messages on/after this date. Leave it at "
-                       "\"(any start)\" for no start limit.");
-    until_ = new QDateEdit;
-    until_->setDisplayFormat("yyyy-MM-dd");
+    since_->setMinimumDateTime(QDateTime(QDate(2001, 1, 1), QTime(0, 0, 0)));  // Apple-time epoch
+    since_->setMaximumDateTime(QDateTime::currentDateTime());
+    since_->setSpecialValueText("(any start)");        // shown at minimumDateTime
+    since_->setDateTime(since_->minimumDateTime());    // default: no lower bound
+    since_->setToolTip("Only export messages on/after this date and time. Leave it "
+                       "at \"(any start)\" for no start limit.");
+    until_ = new QDateTimeEdit;
+    until_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
     until_->setCalendarPopup(true);
-    until_->setMinimumDate(QDate(2001, 1, 1));
-    until_->setMaximumDate(QDate::currentDate());
-    until_->setDate(until_->maximumDate());            // default: today = through now
-    until_->setToolTip("Only export messages on/before this date. Leave it at "
-                       "today for no end limit.");
+    until_->setMinimumDateTime(QDateTime(QDate(2001, 1, 1), QTime(0, 0, 0)));
+    until_->setMaximumDateTime(QDateTime::currentDateTime());
+    until_->setDateTime(until_->maximumDateTime());    // default: now = through now
+    until_->setToolTip("Only export messages on/before this date and time. Leave it "
+                       "at the current time for no end limit.");
     sinceRow->addWidget(new QLabel("From:"));
     sinceRow->addWidget(since_);
     sinceRow->addWidget(new QLabel("To:"));
@@ -452,6 +459,192 @@ MainWindow::MainWindow()
         if (on && !timelinePage_->isChecked()) timelinePage_->setChecked(true);
     });
 
+    // -- Media tab (lightpress compression / efficiency) --
+    auto* mediaTab = new QWidget;
+    auto* mediaLay = new QVBoxLayout(mediaTab);
+    auto* mediaGroup = new QGroupBox("Media efficiency");
+    auto* mediaForm = new QFormLayout(mediaGroup);
+
+    compressMedia_ = new QCheckBox("Maximize efficiency (compress media with lightpress)");
+    compressMedia_->setToolTip("Re-encode copied/embedded pictures and movies through "
+                               "the lightpress codec to shrink the export. Requires "
+                               "attachments to be copied or embedded.");
+    mediaForm->addRow("", compressMedia_);
+
+    // Quality-vs-size slider: 1 = smallest file, 100 = best quality. Default 80.
+    auto* qualityRow = new QHBoxLayout;
+    qualityRow->addWidget(new QLabel("Smaller"));
+    compressQuality_ = new QSlider(Qt::Horizontal);
+    compressQuality_->setRange(1, 100);
+    compressQuality_->setValue(80);
+    compressQuality_->setToolTip("Lower = smaller files; higher = better quality.");
+    qualityRow->addWidget(compressQuality_, 1);
+    qualityRow->addWidget(new QLabel("Higher quality"));
+    compressQualityLabel_ = new QLabel("80");
+    compressQualityLabel_->setMinimumWidth(28);
+    qualityRow->addWidget(compressQualityLabel_);
+    mediaForm->addRow("Quality:", qualityRow);
+    connect(compressQuality_, &QSlider::valueChanged, this, [this](int v) {
+        compressQualityLabel_->setText(QString::number(v));
+    });
+
+    compressStripExif_ = new QCheckBox("Strip photo EXIF metadata");
+    compressStripExif_->setChecked(true);
+    compressStripExif_->setToolTip("Drop camera/location EXIF metadata while "
+                                   "re-encoding photos.");
+    mediaForm->addRow("", compressStripExif_);
+
+    mediaComparison_ = new QCheckBox("Also write an ffmpeg A/B comparison sample");
+    mediaComparison_->setToolTip("Writes an image-movie-comparison/ folder with a few "
+                                 "samples encoded by lightpress and by ffmpeg, for "
+                                 "tuning. Remove the folder once you're satisfied.");
+    mediaForm->addRow("", mediaComparison_);
+
+    // The quality/EXIF/comparison controls only matter when compression is on.
+    auto syncMediaEnabled = [this](bool on) {
+        compressQuality_->setEnabled(on);
+        compressQualityLabel_->setEnabled(on);
+        compressStripExif_->setEnabled(on);
+        mediaComparison_->setEnabled(on);
+    };
+    connect(compressMedia_, &QCheckBox::toggled, this, syncMediaEnabled);
+    syncMediaEnabled(false);
+
+    mediaLay->addWidget(mediaGroup);
+    mediaLay->addStretch();
+    prefsTabs_->addTab(mediaTab, "Media");
+
+    // -- Security tab (encryption / signing / encrypted volume / location) --
+    auto* securityTab = new QWidget;
+    auto* securityLay = new QVBoxLayout(securityTab);
+
+    // Encrypt the whole export with a password.
+    auto* encGroup = new QGroupBox("Encrypt export with password");
+    auto* encForm = new QFormLayout(encGroup);
+    encryptOutput_ = new QCheckBox("Password-protect this export");
+    encForm->addRow("", encryptOutput_);
+    auto* encNote = new QLabel(
+        "Applies to <b>all</b> formats. HTML self-decrypts in a browser; "
+        "JSON/TXT/PDF are written into an encrypted container.");
+    encNote->setWordWrap(true);
+    encNote->setStyleSheet("color:#6e6e73");
+    encForm->addRow("", encNote);
+    encryptPassword_ = new QLineEdit;
+    encryptPassword_->setEchoMode(QLineEdit::Password);
+    encryptPassword_->setPlaceholderText("Password");
+    encForm->addRow("Password:", encryptPassword_);
+    encryptConfirm_ = new QLineEdit;
+    encryptConfirm_->setEchoMode(QLineEdit::Password);
+    encryptConfirm_->setPlaceholderText("Confirm password");
+    encForm->addRow("Confirm:", encryptConfirm_);
+    auto syncEncryptEnabled = [this](bool on) {
+        encryptPassword_->setEnabled(on);
+        encryptConfirm_->setEnabled(on);
+    };
+    connect(encryptOutput_, &QCheckBox::toggled, this, syncEncryptEnabled);
+    syncEncryptEnabled(false);
+    securityLay->addWidget(encGroup);
+
+    // Sign PDFs with a PKCS#12 certificate.
+    auto* signGroup = new QGroupBox("Sign PDF with a certificate");
+    auto* signForm = new QFormLayout(signGroup);
+    signPdf_ = new QCheckBox("Digitally sign generated PDFs");
+    signForm->addRow("", signPdf_);
+    auto* certRow = new QHBoxLayout;
+    pdfCertPath_ = new QLineEdit;
+    pdfCertPath_->setReadOnly(true);
+    pdfCertPath_->setPlaceholderText("No certificate chosen");
+    pdfCertBrowse_ = new QPushButton("Choose .p12…");
+    certRow->addWidget(pdfCertPath_, 1);
+    certRow->addWidget(pdfCertBrowse_);
+    signForm->addRow("Certificate:", certRow);
+    pdfCertPassword_ = new QLineEdit;
+    pdfCertPassword_->setEchoMode(QLineEdit::Password);
+    pdfCertPassword_->setPlaceholderText("Certificate password");
+    signForm->addRow("Password:", pdfCertPassword_);
+    connect(pdfCertBrowse_, &QPushButton::clicked, this, [this] {
+        const QString f = QFileDialog::getOpenFileName(
+            this, "Choose a signing certificate", QDir::homePath(),
+            "PKCS#12 certificates (*.p12 *.pfx);;All files (*)");
+        if (!f.isEmpty()) pdfCertPath_->setText(f);
+    });
+    auto syncSignEnabled = [this](bool on) {
+        pdfCertPath_->setEnabled(on);
+        pdfCertBrowse_->setEnabled(on);
+        pdfCertPassword_->setEnabled(on);
+    };
+    connect(signPdf_, &QCheckBox::toggled, this, syncSignEnabled);
+    syncSignEnabled(false);
+    securityLay->addWidget(signGroup);
+
+    // Store the export on a freshly-created encrypted disk image (macOS only).
+    auto* volGroup = new QGroupBox("Store export on a new encrypted disk image (macOS)");
+    auto* volForm = new QFormLayout(volGroup);
+    encryptedVolume_ = new QCheckBox("Create an encrypted disk image and export onto it");
+    volForm->addRow("", encryptedVolume_);
+    auto* volNote = new QLabel(
+        "macOS only: creates a password-protected .sparseimage via hdiutil. "
+        "Ignored on Windows and Linux.");
+    volNote->setWordWrap(true);
+    volNote->setStyleSheet("color:#6e6e73");
+    volForm->addRow("", volNote);
+    encryptedVolumePassword_ = new QLineEdit;
+    encryptedVolumePassword_->setEchoMode(QLineEdit::Password);
+    encryptedVolumePassword_->setPlaceholderText("Disk image password");
+    volForm->addRow("Password:", encryptedVolumePassword_);
+    connect(encryptedVolume_, &QCheckBox::toggled, this,
+            [this](bool on) { encryptedVolumePassword_->setEnabled(on); });
+    encryptedVolumePassword_->setEnabled(false);
+    securityLay->addWidget(volGroup);
+
+    // Location correlation.
+    auto* locGroup = new QGroupBox("Location correlation");
+    auto* locForm = new QFormLayout(locGroup);
+    locationCorrelate_ = new QCheckBox("Annotate messages with a best-guess location");
+    locForm->addRow("", locationCorrelate_);
+    locationSource_ = new QComboBox;
+    // itemData carries the engine value so the combo is robust to reordering.
+    locationSource_->addItem("Google Takeout", "takeout");
+    locationSource_->addItem("Photos library", "photos");
+    locationSource_->addItem("iPhone backup (routined)", "routined");
+    locForm->addRow("Source:", locationSource_);
+    auto* locRow = new QHBoxLayout;
+    locationDataPath_ = new QLineEdit;
+    locationDataPath_->setPlaceholderText("Path to the location data");
+    locationBrowse_ = new QPushButton("Browse…");
+    locRow->addWidget(locationDataPath_, 1);
+    locRow->addWidget(locationBrowse_);
+    locForm->addRow("Data:", locRow);
+    connect(locationBrowse_, &QPushButton::clicked, this, [this] {
+        // Photos library is a bundle/folder; Takeout/routined are files — accept
+        // either by letting the user pick a file or fall back to a directory.
+        const QString data = locationSource_->currentData().toString();
+        QString chosen;
+        if (data == "photos") {
+            chosen = QFileDialog::getExistingDirectory(
+                this, "Choose the Photos library", QDir::homePath());
+        } else {
+            chosen = QFileDialog::getOpenFileName(
+                this, "Choose the location data", QDir::homePath(),
+                "All files (*)");
+            if (chosen.isEmpty())
+                chosen = QFileDialog::getExistingDirectory(
+                    this, "Choose the location data folder", QDir::homePath());
+        }
+        if (!chosen.isEmpty()) locationDataPath_->setText(chosen);
+    });
+    auto syncLocationEnabled = [this](bool on) {
+        locationSource_->setEnabled(on);
+        locationDataPath_->setEnabled(on);
+        locationBrowse_->setEnabled(on);
+    };
+    connect(locationCorrelate_, &QCheckBox::toggled, this, syncLocationEnabled);
+    syncLocationEnabled(false);
+    securityLay->addWidget(locGroup);
+
+    securityLay->addStretch();
+    prefsTabs_->addTab(securityTab, "Security");
+
     // -- Logging tab --
     auto* logPage = new QWidget;
     auto* lForm = new QFormLayout(logPage);
@@ -530,9 +723,9 @@ MainWindow::MainWindow()
     connect(dbBrowse_, &QPushButton::clicked, this, &MainWindow::browseDatabase);
     connect(outBrowse, &QPushButton::clicked, this, &MainWindow::browseOutput);
     connect(contactsBrowse_, &QPushButton::clicked, this, &MainWindow::browseContacts);
-    // Picking a date arms that bound; the summary reflects it live.
-    connect(since_, &QDateEdit::dateChanged, this, &MainWindow::updateDateSummary);
-    connect(until_, &QDateEdit::dateChanged, this, &MainWindow::updateDateSummary);
+    // Picking a date/time arms that bound; the summary reflects it live.
+    connect(since_, &QDateTimeEdit::dateTimeChanged, this, &MainWindow::updateDateSummary);
+    connect(until_, &QDateTimeEdit::dateTimeChanged, this, &MainWindow::updateDateSummary);
     connect(openBtn_, &QPushButton::clicked, this, &MainWindow::openOutputDir);
     connect(icloudBtn_, &QPushButton::clicked, this,
             &MainWindow::importICloudContacts);
@@ -726,15 +919,71 @@ bool MainWindow::buildInputs(std::string& db_path, std::string& out_dir,
     opts.embed_attachments = embedAttachments_->isChecked();
     opts.hidden_attachment_dir = hiddenAttachDir_->isChecked();
 
-    // A start date later than the "(any start)" sentinel arms the lower bound;
-    // an end date earlier than today arms the upper bound.
-    if (since_->date() > since_->minimumDate() &&
-        imsg::parse_date(since_->date().toString("yyyy-MM-dd").toStdString(), opts.since))
+    // Media compression (lightpress).
+    opts.compress_media = compressMedia_ && compressMedia_->isChecked();
+    if (compressQuality_) opts.compress_quality = compressQuality_->value();
+    opts.compress_strip_exif = compressStripExif_ && compressStripExif_->isChecked();
+    opts.media_comparison = mediaComparison_ && mediaComparison_->isChecked();
+
+    // Security: encryption, PDF signing, encrypted volume. Passwords are read
+    // straight from the fields (never persisted).
+    opts.encrypt_output = encryptOutput_ && encryptOutput_->isChecked();
+    if (opts.encrypt_output) {
+        const QString pw = encryptPassword_->text();
+        const QString confirm = encryptConfirm_->text();
+        if (pw.isEmpty()) {
+            error = "Please enter an encryption password, or turn off "
+                    "\"Password-protect this export\".";
+            return false;
+        }
+        if (pw != confirm) {
+            error = "The encryption passwords do not match.";
+            return false;
+        }
+        opts.encrypt_password = pw.toStdString();
+    }
+    opts.sign_pdf = signPdf_ && signPdf_->isChecked();
+    if (opts.sign_pdf) {
+        opts.pdf_cert_path = pdfCertPath_->text().toStdString();
+        if (opts.pdf_cert_path.empty()) {
+            error = "Please choose a signing certificate (.p12/.pfx), or turn off "
+                    "\"Digitally sign generated PDFs\".";
+            return false;
+        }
+        opts.pdf_cert_password = pdfCertPassword_->text().toStdString();
+    }
+    opts.encrypted_volume = encryptedVolume_ && encryptedVolume_->isChecked();
+    if (opts.encrypted_volume)
+        opts.encrypted_volume_password = encryptedVolumePassword_->text().toStdString();
+
+    // Location correlation.
+    opts.location_correlate = locationCorrelate_ && locationCorrelate_->isChecked();
+    if (opts.location_correlate) {
+        opts.location_source = locationSource_->currentData().toString().toStdString();
+        opts.location_data_path = locationDataPath_->text().toStdString();
+        if (opts.location_data_path.empty()) {
+            error = "Please choose the location data, or turn off "
+                    "\"Annotate messages with a best-guess location\".";
+            return false;
+        }
+    }
+
+    // Per-person background images (configured in the Select People dialog).
+    for (auto it = peopleBackgrounds_.constBegin(); it != peopleBackgrounds_.constEnd();
+         ++it)
+        opts.chat_backgrounds[it.key().toStdString()] = it.value().toStdString();
+
+    // A start date/time later than the "(any start)" sentinel arms the lower
+    // bound; an end date/time before "now" arms the upper bound. The pickers are
+    // second-precision, so convert directly to epoch seconds.
+    if (since_->dateTime() > since_->minimumDateTime()) {
+        opts.since = static_cast<std::time_t>(since_->dateTime().toSecsSinceEpoch());
         opts.has_since = true;
-    if (until_->date() < QDate::currentDate() &&
-        imsg::parse_date(until_->date().toString("yyyy-MM-dd").toStdString(),
-                         opts.until, /*end_of_day=*/true))
+    }
+    if (until_->dateTime() < QDateTime::currentDateTime()) {
+        opts.until = static_cast<std::time_t>(until_->dateTime().toSecsSinceEpoch());
         opts.has_until = true;
+    }
 
     const int src = source_->currentData().toInt();
     std::string backup_dir;
@@ -837,10 +1086,10 @@ void MainWindow::showPreferences() {
 
 void MainWindow::updateDateSummary() {
     if (!dateSummary_) return;
-    const bool hasSince = since_->date() > since_->minimumDate();
-    const bool hasUntil = until_->date() < QDate::currentDate();
-    const QString from = since_->date().toString("yyyy-MM-dd");
-    const QString to = until_->date().toString("yyyy-MM-dd");
+    const bool hasSince = since_->dateTime() > since_->minimumDateTime();
+    const bool hasUntil = until_->dateTime() < QDateTime::currentDateTime();
+    const QString from = since_->dateTime().toString("yyyy-MM-dd HH:mm:ss");
+    const QString to = until_->dateTime().toString("yyyy-MM-dd HH:mm:ss");
     QString text;
     bool active = true;
     if (!hasSince && !hasUntil) {
@@ -1121,8 +1370,17 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/me", meLabel_->text());
     // New keys (the old ui/since/ui/until used a 1-year-ago default that would
     // now read as an active filter; ignoring them resets everyone to "(any)").
-    s.setValue("ui/sinceDate", since_->date().toString("yyyy-MM-dd"));
-    s.setValue("ui/untilDate", until_->date().toString("yyyy-MM-dd"));
+    // Second-precision pickers: persist the full date+time. Persist an empty
+    // string for an "off" bound (since_ at its minimum, until_ at/after now) so a
+    // later relaunch — when "now" has drifted forward — doesn't read the saved
+    // "through now" value as an active upper bound. loadSettings() leaves empty
+    // values at their sentinel.
+    const bool sinceOff = since_->dateTime() <= since_->minimumDateTime();
+    const bool untilOff = until_->dateTime() >= QDateTime::currentDateTime();
+    s.setValue("ui/sinceDate",
+               sinceOff ? QString() : since_->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
+    s.setValue("ui/untilDate",
+               untilOff ? QString() : until_->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
     s.setValue("ui/combined", combined_->isChecked());
     s.setValue("ui/statsCover", statsCover_->isChecked());
     s.setValue("ui/statsPerConv",    statsPerConv_->isChecked());
@@ -1142,12 +1400,33 @@ void MainWindow::saveSettings() const {
     s.setValue("ui/embed", embedAttachments_->isChecked());
     s.setValue("ui/hiddenAttach", hiddenAttachDir_->isChecked());
     s.setValue("ui/richPreviews", richPreviews_->isChecked());
+    // Media / compression toggles (non-secret).
+    s.setValue("ui/compressMedia", compressMedia_->isChecked());
+    s.setValue("ui/compressQuality", compressQuality_->value());
+    s.setValue("ui/compressStripExif", compressStripExif_->isChecked());
+    s.setValue("ui/mediaComparison", mediaComparison_->isChecked());
+    // Security toggles/paths (non-secret only — passwords are NEVER persisted).
+    s.setValue("ui/encryptOutput", encryptOutput_->isChecked());
+    s.setValue("ui/signPdf", signPdf_->isChecked());
+    s.setValue("ui/pdfCertPath", pdfCertPath_->text());
+    s.setValue("ui/encryptedVolume", encryptedVolume_->isChecked());
+    s.setValue("ui/locationCorrelate", locationCorrelate_->isChecked());
+    s.setValue("ui/locationSource", locationSource_->currentData().toString());
+    s.setValue("ui/locationDataPath", locationDataPath_->text());
     s.setValue("ui/uploadDrive", uploadDrive_->isChecked());
     s.setValue("ui/driveFolder", driveFolder_->text());
     s.setValue("ui/contacts", contacts_->currentIndex());
     s.setValue("ui/contactsPath", contactsPath_->text());
     s.setValue("ui/logLevel", logLevel_->currentText());
     s.setValue("ui/people", selectedPeople_);
+    // Per-person background images: handle -> path under the "ui/backgrounds"
+    // group. Cleared and rewritten so removed entries don't linger.
+    s.remove("ui/backgrounds");
+    s.beginGroup("ui/backgrounds");
+    for (auto it = peopleBackgrounds_.constBegin(); it != peopleBackgrounds_.constEnd();
+         ++it)
+        s.setValue(it.key(), it.value());
+    s.endGroup();
     // Select-People "Hide inactive" filter. Owned by pickPeople() (the controls
     // are dialog-local); preserve the stored values here so a settings rewrite
     // keeps them and they sit beside the other ui/* keys.
@@ -1164,10 +1443,19 @@ void MainWindow::loadSettings() {
     themeCombo_->setCurrentText(s.value("ui/theme", "ios").toString());
     outputDir_->setText(s.value("ui/output", outputDir_->text()).toString());
     meLabel_->setText(s.value("ui/me", "Me").toString());
-    const QDate sd = QDate::fromString(s.value("ui/sinceDate").toString(), "yyyy-MM-dd");
-    if (sd.isValid()) since_->setDate(sd);
-    const QDate ud = QDate::fromString(s.value("ui/untilDate").toString(), "yyyy-MM-dd");
-    if (ud.isValid()) until_->setDate(ud);
+    // Second-precision pickers. Accept the new "date time" format, and fall back
+    // to a bare "yyyy-MM-dd" (written by older builds) at start-of-day.
+    auto restoreDateTime = [](QDateTimeEdit* edit, const QString& stored) {
+        if (stored.isEmpty()) return;
+        QDateTime dt = QDateTime::fromString(stored, "yyyy-MM-dd HH:mm:ss");
+        if (!dt.isValid()) {
+            const QDate d = QDate::fromString(stored, "yyyy-MM-dd");
+            if (d.isValid()) dt = QDateTime(d, QTime(0, 0, 0));
+        }
+        if (dt.isValid()) edit->setDateTime(dt);
+    };
+    restoreDateTime(since_, s.value("ui/sinceDate").toString());
+    restoreDateTime(until_, s.value("ui/untilDate").toString());
     updateDateSummary();
     combined_->setChecked(s.value("ui/combined", false).toBool());
     if (statsCover_)    statsCover_->setChecked(s.value("ui/statsCover", false).toBool());
@@ -1190,6 +1478,29 @@ void MainWindow::loadSettings() {
     embedAttachments_->setChecked(s.value("ui/embed", false).toBool());
     hiddenAttachDir_->setChecked(s.value("ui/hiddenAttach", false).toBool());
     richPreviews_->setChecked(s.value("ui/richPreviews", false).toBool());
+    // Media / compression toggles (toggled() handlers re-sync the dependent
+    // controls' enabled state). Set the slider before its checkbox isn't required,
+    // but the live label is refreshed by valueChanged anyway.
+    if (compressQuality_) compressQuality_->setValue(s.value("ui/compressQuality", 80).toInt());
+    if (compressStripExif_)
+        compressStripExif_->setChecked(s.value("ui/compressStripExif", true).toBool());
+    if (mediaComparison_)
+        mediaComparison_->setChecked(s.value("ui/mediaComparison", false).toBool());
+    if (compressMedia_) compressMedia_->setChecked(s.value("ui/compressMedia", false).toBool());
+    // Security toggles/paths (passwords are intentionally not restored).
+    if (signPdf_) signPdf_->setChecked(s.value("ui/signPdf", false).toBool());
+    if (pdfCertPath_) pdfCertPath_->setText(s.value("ui/pdfCertPath").toString());
+    if (encryptedVolume_)
+        encryptedVolume_->setChecked(s.value("ui/encryptedVolume", false).toBool());
+    if (locationSource_) {
+        const int li =
+            locationSource_->findData(s.value("ui/locationSource", "takeout").toString());
+        if (li >= 0) locationSource_->setCurrentIndex(li);
+    }
+    if (locationDataPath_) locationDataPath_->setText(s.value("ui/locationDataPath").toString());
+    if (locationCorrelate_)
+        locationCorrelate_->setChecked(s.value("ui/locationCorrelate", false).toBool());
+    if (encryptOutput_) encryptOutput_->setChecked(s.value("ui/encryptOutput", false).toBool());
     uploadDrive_->setChecked(s.value("ui/uploadDrive", false).toBool());
     driveFolder_->setText(s.value("ui/driveFolder").toString());
     contacts_->setCurrentIndex(s.value("ui/contacts", 0).toInt());
@@ -1199,6 +1510,12 @@ void MainWindow::loadSettings() {
     peopleLabel_->setText(selectedPeople_.isEmpty()
                               ? "All conversations"
                               : QString("%1 selected").arg(selectedPeople_.size()));
+    // Per-person background images: restore handle -> path from "ui/backgrounds".
+    peopleBackgrounds_.clear();
+    s.beginGroup("ui/backgrounds");
+    for (const QString& key : s.childKeys())
+        peopleBackgrounds_.insert(key, s.value(key).toString());
+    s.endGroup();
     // ui/hideInactive (bool, default false) + ui/inactiveDays (int, default 180)
     // are read on demand by pickPeople() from QSettings, so there's nothing to
     // restore into a widget here; the keys live beside the others for clarity.
@@ -1384,6 +1701,12 @@ void MainWindow::pickPeople() {
     // checked), so track it by canonical rather than reading the live widgets.
     QSet<QString> checked;
     for (const QString& s : selectedPeople_) checked.insert(s);
+
+    // Per-person background images chosen here, keyed by canonical (the same key
+    // used in selectedPeople_). Seeded from the persisted map; copied back into
+    // peopleBackgrounds_ on accept. Tracked separately from the list widgets so a
+    // choice survives re-sorting/-filtering, like the checked state.
+    QMap<QString, QString> bgByCanon = peopleBackgrounds_;
     auto syncCheckedFromList = [list, &checked] {
         for (int i = 0; i < list->count(); ++i) {
             QListWidgetItem* it = list->item(i);
@@ -1456,7 +1779,12 @@ void MainWindow::pickPeople() {
 
         list->clear();
         for (const PersonRow* r : view) {
-            auto* item = new QListWidgetItem(r->display, list);
+            // Append a background marker (with the chosen file's name) when set.
+            QString label = r->display;
+            const QString bg = bgByCanon.value(r->canonical);
+            if (!bg.isEmpty())
+                label += "   ·  background: " + QFileInfo(bg).fileName();
+            auto* item = new QListWidgetItem(label, list);
             item->setData(Qt::UserRole, r->canonical);  // value the filter matches
             item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
             item->setCheckState(checked.contains(r->canonical) ? Qt::Checked
@@ -1489,8 +1817,50 @@ void MainWindow::pickPeople() {
         for (int i = 0; i < list->count(); ++i)
             list->item(i)->setCheckState(Qt::Unchecked);
     });
+    // Per-person background: set (or clear) a poster image for the highlighted
+    // person. Keyed by canonical so it survives re-sorting/filtering; the marker
+    // in the row text is refreshed via repopulate().
+    auto* bgBtn = new QPushButton("Background…", &dlg);
+    bgBtn->setToolTip("Choose a background image rendered behind the highlighted "
+                      "person's conversation. Pick again to replace; Cancel to keep.");
+    bgBtn->setEnabled(false);
+    auto* bgClearBtn = new QPushButton("Clear background", &dlg);
+    bgClearBtn->setEnabled(false);
+    // Enable the background buttons only when a row is highlighted (and Clear only
+    // when that row actually has a background set).
+    auto refreshBgButtons = [list, bgBtn, bgClearBtn, &bgByCanon] {
+        QListWidgetItem* it = list->currentItem();
+        bgBtn->setEnabled(it != nullptr);
+        bgClearBtn->setEnabled(it && !bgByCanon.value(it->data(Qt::UserRole).toString())
+                                          .isEmpty());
+    };
+    connect(list, &QListWidget::currentItemChanged, &dlg,
+            [refreshBgButtons](QListWidgetItem*, QListWidgetItem*) { refreshBgButtons(); });
+    connect(bgBtn, &QPushButton::clicked, &dlg, [&] {
+        QListWidgetItem* it = list->currentItem();
+        if (!it) return;
+        const QString canon = it->data(Qt::UserRole).toString();
+        const QString f = QFileDialog::getOpenFileName(
+            &dlg, "Choose a background image", QDir::homePath(),
+            "Images (*.png *.jpg *.jpeg *.gif *.webp *.heic *.bmp);;All files (*)");
+        if (f.isEmpty()) return;  // keep any existing choice
+        bgByCanon.insert(canon, f);
+        syncCheckedFromList();  // preserve checks across the repopulate
+        repopulate();
+        refreshBgButtons();
+    });
+    connect(bgClearBtn, &QPushButton::clicked, &dlg, [&] {
+        QListWidgetItem* it = list->currentItem();
+        if (!it) return;
+        bgByCanon.remove(it->data(Qt::UserRole).toString());
+        syncCheckedFromList();
+        repopulate();
+        refreshBgButtons();
+    });
     selRow->addWidget(selAllBtn);
     selRow->addWidget(selNoneBtn);
+    selRow->addWidget(bgBtn);
+    selRow->addWidget(bgClearBtn);
     selRow->addStretch();
     layout->addLayout(selRow);
 
@@ -1513,6 +1883,9 @@ void MainWindow::pickPeople() {
     peopleLabel_->setText(selectedPeople_.isEmpty()
                               ? "All conversations"
                               : QString("%1 selected").arg(selectedPeople_.size()));
+    // Commit the per-person background choices (copied into chat_backgrounds in
+    // buildInputs(), persisted under "ui/backgrounds" by saveSettings()).
+    peopleBackgrounds_ = bgByCanon;
 }
 
 void MainWindow::copyMessagesData() {
