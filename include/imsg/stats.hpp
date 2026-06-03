@@ -43,6 +43,10 @@ struct Stats {
     std::array<long long, 7> by_weekday{};
     std::array<long long, 24> by_hour{};
 
+    // Joint weekday x hour distribution ([weekday][hour]), powering the heatmap
+    // chart. Same localtime binning as by_weekday/by_hour above.
+    std::array<std::array<int, 24>, 7> hour_by_weekday{};
+
     // Volume per calendar year ("2024") and per sender label, sorted by key.
     std::map<std::string, long long> by_year;
     std::map<std::string, long long> per_sender;
@@ -73,6 +77,9 @@ struct StatsRenderOpts {
     bool top_texters = true;
     bool word_stats  = true;
     bool fun_facts   = true;
+    // Wrap each section in <details open><summary> so readers can fold sections
+    // independently (a tappable header on mobile). Disable for a flat document.
+    bool collapsible = true;
 };
 
 // Renders a complete standalone HTML document summarizing `s`: headline totals,
@@ -83,5 +90,11 @@ std::string render_stats_html(const Stats& st, const StatsRenderOpts& opts = {})
 
 // Condensed stats block (no <html>/<head>) for embedding in conversation pages.
 std::string render_stats_section_html(const Stats& st, const StatsRenderOpts& opts = {});
+
+// A standalone <details> fragment summarizing media-compression savings: human
+// readable before/after sizes, bytes + percent saved, file count, and a
+// before-vs-after bar. Returns "" when bytes_before == 0 (nothing to report).
+std::string render_space_saved_html(long long bytes_before, long long bytes_after,
+                                    int files_compressed);
 
 }  // namespace imsg

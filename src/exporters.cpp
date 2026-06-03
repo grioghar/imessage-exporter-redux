@@ -511,7 +511,15 @@ std::string html_conversation(const Chat& chat) {
     const std::string title = html_escape(chat.title());
     const auto& people = chat.participant_details;
     const bool is_sms = (chat.service == "SMS" || chat.service == "RCS");
-    os << "<div class=\"conversation" << (is_sms ? " sms-style" : "") << "\">\n"
+    // Optional per-conversation background image (cover, fixed) with a readable
+    // scrim — the .has-bg rules (theme base CSS) draw the scrim + keep bubbles
+    // legible; the image itself is supplied inline so each chat can differ.
+    const bool has_bg = !chat.background_uri.empty();
+    os << "<div class=\"conversation" << (is_sms ? " sms-style" : "")
+       << (has_bg ? " has-bg" : "") << "\"";
+    if (has_bg)
+        os << " style=\"background-image:url('" << html_escape(chat.background_uri) << "')\"";
+    os << ">\n"
        << "<header class=\"chat-header\">\n";
     if (people.size() == 1) {
         // 1:1 chat: a large avatar beside the contact's name, with their raw
@@ -602,7 +610,15 @@ std::string html_conversation(const Chat& chat) {
         }
         if (!embeds.empty()) { os << embeds; wrote = true; }
         if (!wrote) os << "<span class=\"empty\">(no content)</span>";
-        os << "</div></div>\n";
+        os << "</div>";  // close .bubble
+        // Correlated location (location.cpp): a small pin + place + confidence
+        // under the bubble, e.g. "located 95% · Paris". Only when we have both a
+        // label and a non-zero confidence.
+        if (m.location_confidence > 0 && !m.location_label.empty())
+            os << "<span class=\"loc-badge\">\xF0\x9F\x93\x8D located "
+               << m.location_confidence << "% &middot; " << html_escape(m.location_label)
+               << "</span>";
+        os << "</div>\n";  // close .msg
     }
     os << "</div>\n";
     return os.str();

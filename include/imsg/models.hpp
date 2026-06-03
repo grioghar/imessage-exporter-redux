@@ -49,6 +49,13 @@ struct Message {
 
     std::vector<Attachment> attachments;
 
+    // Where this message was likely sent, correlated from an external location
+    // source (see location.hpp). Empty/zero when no correlation was attempted or
+    // none was confident. `location_label` is a place name or "lat,lon"; the
+    // confidence is a 0..100 percent (higher = nearer in time to a known fix).
+    std::string location_label;
+    int location_confidence = 0;
+
     bool has_text() const;
 };
 
@@ -71,6 +78,11 @@ struct Chat {
     std::vector<Participant> participant_details;
     long long message_count = 0;   // populated by the chat index; messages may be unloaded
     std::vector<Message> messages;
+
+    // Optional background image for this conversation in the HTML export: any
+    // URI usable in CSS background (an http(s) URL, a relative path, or a
+    // "data:" URI). Empty leaves the theme's default background.
+    std::string background_uri;
 
     // Best human-readable name for the conversation.
     std::string title() const;

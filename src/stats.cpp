@@ -184,6 +184,182 @@ void bar_row(std::ostringstream& os, const std::string& label, long long value,
        << "<span class=\"val\">" << group(value) << "</span></div>\n";
 }
 
+// --- Multi-representation charts (Bar | Line | Pie | Heatmap) ---------------
+// Each labelled series renders four interchangeable views; a tiny inline script
+// (see kChartScript) toggles which one is visible. No external libraries: every
+// view is plain inline SVG / CSS-grid. The series is passed pre-formatted so the
+// same machinery serves the hour, weekday, and top-texter charts.
+
+struct Datum {
+    std::string label;
+    long long value = 0;
+};
+
+// A stable, readable hue per slice index — used by the pie legend and slices so
+// the same category keeps the same color across the legend and the wheel.
+std::string slice_color(std::size_t i) {
+    static const char* kPalette[] = {
+        "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#3b82f6", "#ef4444",
+        "#14b8a6", "#a855f7", "#eab308", "#22c55e", "#0ea5e9", "#f43f5e"};
+    return kPalette[i % (sizeof(kPalette) / sizeof(kPalette[0]))];
+}
+
+// Bar view: the existing horizontal CSS bars (kept as the default look).
+void chart_bars(std::ostringstream& os, const std::vector<Datum>& data, long long mx) {
+    for (const Datum& d : data) bar_row(os, d.label, d.value, mx);
+}
+
+// Line view: an inline SVG polyline scaled to the data over a baseline axis.
+// viewBox space is 100 wide x 60 tall; points are evenly spaced horizontally.
+void chart_line(std::ostringstream& os, const std::vector<Datum>& data, long long mx) {
+    const std::size_t n = data.size();
+    const long long denom = std::max<long long>(mx, 1);
+    os << "<svg class=\"chart-svg\" viewBox=\"0 0 100 64\" preserveAspectRatio=\"none\" "
+          "role=\"img\" aria-label=\"line chart\"><polyline class=\"chart-axis\" "
+          "points=\"0,58 100,58\"/><polyline class=\"chart-line\" points=\"";
+    for (std::size_t i = 0; i < n; ++i) {
+        const double x = (n <= 1) ? 50.0 : (100.0 * i / (n - 1));
+        const double y = 58.0 - 54.0 * data[i].value / denom;  // 4px top margin
+        char buf[40];
+        std::snprintf(buf, sizeof(buf), "%s%.2f,%.2f", i ? " " : "", x, y);
+        os << buf;
+    }
+    os << "\"/></svg>\n";
+}
+
+// Pie view: one stacked conic-gradient wheel + a small legend. conic-gradient is
+// far simpler (and crisper) than juggling stroke-dasharray on SVG circles.
+void chart_pie(std::ostringstream& os, const std::vector<Datum>& data) {
+    long long total = 0;
+    for (const Datum& d : data) total += d.value;
+    if (total <= 0) total = 1;
+    os << "<div class=\"chart-pie\"><div class=\"pie-wheel\" style=\"background:conic-gradient(";
+    double acc = 0.0;
+    bool first = true;
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        const double start = acc * 100.0 / total;
+        acc += static_cast<double>(data[i].value);
+        const double end = acc * 100.0 / total;
+        char seg[96];
+        std::snprintf(seg, sizeof(seg), "%s%s %.3f%% %.3f%%", first ? "" : ",",
+                      slice_color(i).c_str(), start, end);
+        os << seg;
+        first = false;
+    }
+    os << ")\"></div><ul class=\"pie-legend\">";
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        const int pct = static_cast<int>(data[i].value * 100 / total);
+        os << "<li><span class=\"sw\" style=\"background:" << slice_color(i) << "\"></span>"
+           << esc(data[i].label) << " <span class=\"c\">" << pct << "%</span></li>";
+    }
+    os << "</ul></div>\n";
+}
+
+// Heatmap view: a CSS-grid 7x24 (weekday rows x hour columns) keyed off the
+// joint hour_by_weekday tally; cell lightness scales inversely with volume.
+// Independent of the per-chart `data`, so all three groups share one heatmap.
+void chart_heatmap(std::ostringstream& os,
+                   const std::array<std::array<int, 24>, 7>& grid) {
+    int mx = 0;
+    for (const auto& row : grid)
+        for (int v : row) mx = std::max(mx, v);
+    if (mx <= 0) mx = 1;
+    os << "<div class=\"heatmap\"><div class=\"hm-grid\">";
+    // Corner spacer, then hour ticks across the top (every 6h for legibility).
+    os << "<div class=\"hm-corner\"></div>";
+    for (int h = 0; h < 24; ++h) {
+        os << "<div class=\"hm-tick\">" << (h % 6 == 0 ? std::to_string(h) : std::string())
+           << "</div>";
+    }
+    for (int wd = 0; wd < 7; ++wd) {
+        os << "<div class=\"hm-day\">" << kWeekdayShort[wd] << "</div>";
+        for (int h = 0; h < 24; ++h) {
+            const int v = grid[wd][h];
+            const int lightness = 92 - static_cast<int>(64.0 * v / mx);  // 92%→28%
+            char cell[96];
+            std::snprintf(cell, sizeof(cell),
+                          "<div class=\"hm-cell\" style=\"background:hsl(265,70%%,%d%%)\" "
+                          "title=\"%s %02d:00 — %d\"></div>",
+                          lightness, kWeekdayShort[wd], h, v);
+            os << cell;
+        }
+    }
+    os << "</div></div>\n";
+}
+
+// A full switchable chart group: a "Bar | Line | Pie | Heatmap" button row over
+// four stacked views, only one shown at a time (Bar by default). `gid` scopes
+// the group so several can coexist on one page; the inline script keys off it.
+// The section heading is emitted by the caller (so it can live in a <summary>),
+// not here.
+void chart_group(std::ostringstream& os, int gid, const std::vector<Datum>& data,
+                 long long mx, const std::array<std::array<int, 24>, 7>& heat) {
+    os << "<div class=\"chart-group\" data-cg=\"" << gid << "\">\n"
+       << "<div class=\"chart-tabs\" role=\"tablist\">";
+    static const char* kViews[] = {"bar", "line", "pie", "heatmap"};
+    static const char* kLabels[] = {"Bar", "Line", "Pie", "Heatmap"};
+    for (int v = 0; v < 4; ++v)
+        os << "<button type=\"button\" class=\"chart-tab" << (v == 0 ? " active" : "")
+           << "\" data-view=\"" << kViews[v] << "\">" << kLabels[v] << "</button>";
+    os << "</div>\n";
+    os << "<div class=\"chart-view active\" data-view=\"bar\">";
+    chart_bars(os, data, mx);
+    os << "</div>\n<div class=\"chart-view\" data-view=\"line\">";
+    chart_line(os, data, mx);
+    os << "</div>\n<div class=\"chart-view\" data-view=\"pie\">";
+    chart_pie(os, data);
+    os << "</div>\n<div class=\"chart-view\" data-view=\"heatmap\">";
+    chart_heatmap(os, heat);
+    os << "</div>\n</div>\n";
+}
+
+// Inline switcher script: for each .chart-group, clicking a tab shows the view
+// whose data-view matches and hides the rest. Scoped per group via [data-cg] so
+// multiple groups on one page toggle independently. ~20 lines, no libraries.
+const char* kChartScript =
+    "<script>(function(){"
+    "document.querySelectorAll('.chart-group').forEach(function(g){"
+    "g.querySelectorAll('.chart-tab').forEach(function(b){"
+    "b.addEventListener('click',function(){"
+    "var v=b.getAttribute('data-view');"
+    "g.querySelectorAll('.chart-tab').forEach(function(x){"
+    "x.classList.toggle('active',x===b)});"
+    "g.querySelectorAll('.chart-view').forEach(function(x){"
+    "x.classList.toggle('active',x.getAttribute('data-view')===v)});"
+    "})})})})();</script>\n";
+
+// CSS for the chart views + the collapsible <details> sections. Appended into
+// whichever <style> block the caller already emits.
+const char* kChartCss =
+    ".chart-tabs{display:flex;gap:4px;margin:0 0 12px;flex-wrap:wrap}"
+    ".chart-tab{font:inherit;font-size:.78rem;padding:4px 12px;border:1px solid #d9d9e0;"
+    "background:#f5f5f7;color:#48484a;border-radius:999px;cursor:pointer}"
+    ".chart-tab.active{background:#7c3aed;color:#fff;border-color:#7c3aed}"
+    ".chart-view{display:none}.chart-view.active{display:block}"
+    ".chart-svg{width:100%;height:160px;display:block;overflow:visible}"
+    ".chart-axis{fill:none;stroke:#d9d9e0;stroke-width:.5}"
+    ".chart-line{fill:none;stroke:#7c3aed;stroke-width:1.5;vector-effect:non-scaling-stroke;"
+    "stroke-linejoin:round;stroke-linecap:round}"
+    ".chart-pie{display:flex;gap:18px;align-items:center;flex-wrap:wrap}"
+    ".pie-wheel{width:140px;height:140px;border-radius:50%;flex:0 0 auto}"
+    ".pie-legend{list-style:none;margin:0;padding:0;font-size:.85rem}"
+    ".pie-legend li{display:flex;align-items:center;gap:6px;margin:3px 0}"
+    ".pie-legend .sw{width:12px;height:12px;border-radius:3px;flex:0 0 auto}"
+    ".pie-legend .c{color:#6b6b70}"
+    ".heatmap{overflow-x:auto}"
+    ".hm-grid{display:grid;grid-template-columns:auto repeat(24,1fr);gap:2px;min-width:420px}"
+    ".hm-corner,.hm-tick{font-size:.6rem;color:#6b6b70;text-align:center;height:14px}"
+    ".hm-day{font-size:.7rem;color:#48484a;padding-right:6px;display:flex;align-items:center}"
+    ".hm-cell{aspect-ratio:1;border-radius:2px;min-height:12px}"
+    // Collapsible sections: a tappable summary with a chevron that rotates open.
+    "details.sec{background:inherit;border:0;padding:0;margin:0}"
+    "details.sec>summary{cursor:pointer;list-style:none;font-size:1.15rem;font-weight:600;"
+    "margin:0 0 14px;display:flex;align-items:center;gap:8px;user-select:none}"
+    "details.sec>summary::-webkit-details-marker{display:none}"
+    "details.sec>summary::before{content:'';border:solid #7c3aed;border-width:0 2px 2px 0;"
+    "display:inline-block;padding:3px;transform:rotate(-45deg);transition:transform .15s}"
+    "details.sec[open]>summary::before{transform:rotate(45deg)}";
+
 // "Month D, YYYY" from epoch seconds, local time (the page reports local
 // activity, matching how the conversations themselves are timestamped).
 std::string pretty_date(std::time_t t) {
@@ -235,6 +411,8 @@ void Stats::add(const Chat& chat) {
 #endif
         if (tm.tm_wday >= 0 && tm.tm_wday < 7) ++by_weekday[tm.tm_wday];
         if (tm.tm_hour >= 0 && tm.tm_hour < 24) ++by_hour[tm.tm_hour];
+        if (tm.tm_wday >= 0 && tm.tm_wday < 7 && tm.tm_hour >= 0 && tm.tm_hour < 24)
+            ++hour_by_weekday[tm.tm_wday][tm.tm_hour];
 
         char ybuf[8];
         std::snprintf(ybuf, sizeof(ybuf), "%04d", tm.tm_year + 1900);
@@ -264,9 +442,24 @@ void stats_add(Stats& s, const Chat& chat) { s.add(chat); }
 
 namespace {
 
+// Wraps each section so it is independently collapsible when opts.collapsible:
+// <details class="sec" open><summary>Title</summary> … </details>. Otherwise a
+// plain <section><h2>Title</h2> … </section>. Passing the same title to both
+// keeps the toggle header and the heading identical across modes.
+void open_section(std::ostringstream& os, const std::string& title, bool collapsible) {
+    if (collapsible)
+        os << "<details class=\"sec\" open><summary>" << esc(title) << "</summary>\n";
+    else
+        os << "<section><h2>" << esc(title) << "</h2>\n";
+}
+void close_section(std::ostringstream& os, bool collapsible) {
+    os << (collapsible ? "</details>\n" : "</section>\n");
+}
+
 // Renders a CSS month-grid heatmap timeline into `os`. Each year is a row of
 // 12 cells, colored by relative message volume using green hues.
-void render_timeline(std::ostringstream& os, const std::map<std::string, int>& monthly) {
+void render_timeline(std::ostringstream& os, const std::map<std::string, int>& monthly,
+                     bool collapsible) {
     if (monthly.empty()) return;
 
     // Find max for color scaling.
@@ -285,8 +478,8 @@ void render_timeline(std::ostringstream& os, const std::map<std::string, int>& m
 
     static const char* kMonAbbr[12] = {"J","F","M","A","M","J","J","A","S","O","N","D"};
 
-    os << "<section><h2 class=\"tl-head\">Activity Timeline</h2>\n"
-       << "<style>"
+    open_section(os, "Activity Timeline", collapsible);
+    os << "<style>"
           ".tl-grid{display:table;border-collapse:separate;border-spacing:3px}"
           ".tl-row{display:table-row}"
           ".tl-cell{display:table-cell;width:28px;height:28px;border-radius:4px;"
@@ -322,13 +515,15 @@ void render_timeline(std::ostringstream& os, const std::map<std::string, int>& m
         }
         os << "</div>\n";
     }
-    os << "</div></section>\n";
+    os << "</div>";
+    close_section(os, collapsible);
 }
 
 // Shared body of sections (no full HTML wrapper), used by both render_stats_html
 // and render_stats_section_html.
 void render_stats_body(std::ostringstream& os, const Stats& st,
                        const StatsRenderOpts& opts) {
+    const bool col = opts.collapsible;
     // --- Derived headline figures ------------------------------------------
     const double words_per_msg = st.total ? static_cast<double>(st.words) / st.total : 0.0;
     const double emoji_per_100 = st.total ? static_cast<double>(st.emoji) * 100.0 / st.total : 0.0;
@@ -380,39 +575,47 @@ void render_stats_body(std::ostringstream& os, const Stats& st,
 
     // --- Date span ----------------------------------------------------------
     if (st.has_dates) {
-        os << "<section><h2>Time span</h2><p>From <strong>" << esc(pretty_date(st.first))
+        open_section(os, "Time span", col);
+        os << "<p>From <strong>" << esc(pretty_date(st.first))
            << "</strong> to <strong>" << esc(pretty_date(st.last)) << "</strong> &mdash; "
-           << group(st.days_span) << " day" << (st.days_span == 1 ? "" : "s") << ".</p></section>\n";
+           << group(st.days_span) << " day" << (st.days_span == 1 ? "" : "s") << ".</p>";
+        close_section(os, col);
     }
 
     // --- Activity timeline --------------------------------------------------
     if (opts.timeline && !st.monthly.empty()) {
-        render_timeline(os, st.monthly);
+        render_timeline(os, st.monthly, col);
     }
 
-    // --- By weekday chart ---------------------------------------------------
-    if (opts.weekday) {
-        long long mx = 0;
-        for (long long v : st.by_weekday) mx = std::max(mx, v);
-        if (mx > 0) {
-            os << "<section><h2>Messages by day of week</h2>\n";
-            for (int i = 0; i < 7; ++i) bar_row(os, kWeekdayShort[i], st.by_weekday[i], mx);
-            os << "</section>\n";
-        }
-    }
-
-    // --- By hour chart ------------------------------------------------------
+    // --- Messages by hour of day (switchable chart) -------------------------
+    // gid is unique per group so the inline switcher scopes correctly when all
+    // three chart groups appear together.
     if (opts.hourly) {
         long long mx = 0;
         for (long long v : st.by_hour) mx = std::max(mx, v);
         if (mx > 0) {
-            os << "<section><h2>Messages by hour of day</h2>\n";
+            std::vector<Datum> data;
             for (int h = 0; h < 24; ++h) {
                 char lbl[8];
                 std::snprintf(lbl, sizeof(lbl), "%02d:00", h);
-                bar_row(os, lbl, st.by_hour[h], mx);
+                data.push_back({lbl, st.by_hour[h]});
             }
-            os << "</section>\n";
+            open_section(os, "Messages by hour of day", col);
+            chart_group(os, 1, data, mx, st.hour_by_weekday);
+            close_section(os, col);
+        }
+    }
+
+    // --- Messages by day of week (switchable chart) -------------------------
+    if (opts.weekday) {
+        long long mx = 0;
+        for (long long v : st.by_weekday) mx = std::max(mx, v);
+        if (mx > 0) {
+            std::vector<Datum> data;
+            for (int i = 0; i < 7; ++i) data.push_back({kWeekdayShort[i], st.by_weekday[i]});
+            open_section(os, "Messages by day of week", col);
+            chart_group(os, 2, data, mx, st.hour_by_weekday);
+            close_section(os, col);
         }
     }
 
@@ -420,19 +623,37 @@ void render_stats_body(std::ostringstream& os, const Stats& st,
     if (st.by_year.size() > 1) {
         long long mx = 0;
         for (const auto& kv : st.by_year) mx = std::max(mx, kv.second);
-        os << "<section><h2>Messages by year</h2>\n";
+        open_section(os, "Messages by year", col);
         for (const auto& kv : st.by_year) bar_row(os, kv.first, kv.second, mx);
-        os << "</section>\n";
+        close_section(os, col);
     }
 
-    // --- Top senders --------------------------------------------------------
+    // --- Top texters (switchable chart) -------------------------------------
     if (opts.top_texters && !st.per_sender.empty()) {
         std::vector<std::pair<std::string, long long>> ranked(st.per_sender.begin(),
                                                               st.per_sender.end());
         std::stable_sort(ranked.begin(), ranked.end(),
                          [](const auto& a, const auto& b) { return a.second > b.second; });
         const std::size_t show = std::min<std::size_t>(ranked.size(), 10);
-        os << "<section><h2>Top texters</h2><ol class=\"senders\">\n";
+        // The bar view links each name to its conversation; the line/pie views
+        // need only the value, so build a plain Datum series alongside the list.
+        std::vector<Datum> data;
+        for (std::size_t i = 0; i < show; ++i)
+            data.push_back({ranked[i].first, ranked[i].second});
+        long long mx = data.empty() ? 0 : data.front().value;
+
+        open_section(os, "Top texters", col);
+        os << "<div class=\"chart-group\" data-cg=\"3\">\n"
+           << "<div class=\"chart-tabs\" role=\"tablist\">";
+        static const char* kViews[] = {"bar", "line", "pie", "heatmap"};
+        static const char* kLabels[] = {"Bar", "Line", "Pie", "Heatmap"};
+        for (int v = 0; v < 4; ++v)
+            os << "<button type=\"button\" class=\"chart-tab" << (v == 0 ? " active" : "")
+               << "\" data-view=\"" << kViews[v] << "\">" << kLabels[v] << "</button>";
+        os << "</div>\n";
+        // Bar view = the ranked list with conversation links (richer than plain
+        // bars, and what readers expect for "top texters").
+        os << "<div class=\"chart-view active\" data-view=\"bar\"><ol class=\"senders\">\n";
         for (std::size_t i = 0; i < show; ++i) {
             const std::string& name = ranked[i].first;
             auto file_it = st.handle_to_file.find(name);
@@ -443,12 +664,21 @@ void render_stats_body(std::ostringstream& os, const Stats& st,
                 os << esc(name);
             os << " <span class=\"c\">(" << group(ranked[i].second) << ")</span></li>\n";
         }
-        os << "</ol></section>\n";
+        os << "</ol></div>\n";
+        os << "<div class=\"chart-view\" data-view=\"line\">";
+        chart_line(os, data, mx);
+        os << "</div>\n<div class=\"chart-view\" data-view=\"pie\">";
+        chart_pie(os, data);
+        os << "</div>\n<div class=\"chart-view\" data-view=\"heatmap\">";
+        chart_heatmap(os, st.hour_by_weekday);
+        os << "</div>\n</div>\n";
+        close_section(os, col);
     }
 
     // --- Fun facts ----------------------------------------------------------
     if (opts.fun_facts) {
-        os << "<section><h2>Fun facts</h2><ul class=\"facts\">\n";
+        open_section(os, "Fun facts", col);
+        os << "<ul class=\"facts\">\n";
         auto fact = [&](const char* emoji_char, const std::string& html) {
             os << "<li><span class=\"e\">" << emoji_char << "</span>" << html << "</li>\n";
         };
@@ -498,8 +728,8 @@ void render_stats_body(std::ostringstream& os, const Stats& st,
         os << "</ul>\n"
            << "<p style=\"color:#86868b;font-size:.8rem;margin:12px 0 0\">"
               "Note: chat.db records no location or weather, so this recap focuses on "
-              "time, volume, people, words, and emoji.</p>\n"
-           << "</section>\n";
+              "time, volume, people, words, and emoji.</p>\n";
+        close_section(os, col);
     }
 }
 
@@ -550,8 +780,12 @@ std::string render_stats_html(const Stats& st, const StatsRenderOpts& opts) {
           ".card,section{background:#1f1f24;box-shadow:none}"
           ".bar .track{background:#333}ul.facts li{border-color:#2a2a30}"
           "header p,.card .k,.bar .val,ol.senders .c{color:#a1a1a6}"
-          ".bar .lbl{color:#c7c7cc}}\n"
-          "</style>\n"
+          ".bar .lbl{color:#c7c7cc}"
+          ".chart-tab{background:#2a2a30;color:#c7c7cc;border-color:#3a3a40}"
+          ".chart-axis{stroke:#3a3a40}.pie-legend .c{color:#a1a1a6}"
+          ".hm-corner,.hm-tick{color:#a1a1a6}.hm-day{color:#c7c7cc}}\n"
+       << kChartCss << "\n"
+       << "</style>\n"
        << "</head>\n<body>\n<div class=\"wrap\">\n";
 
     os << "<header><h1>Your iMessage Statistics</h1>\n"
@@ -561,7 +795,9 @@ std::string render_stats_html(const Stats& st, const StatsRenderOpts& opts) {
     render_stats_body(os, st, opts);
 
     os << "<footer>Generated by iMessage Exporter &middot; no data left this device</footer>\n"
-       << "</div>\n</body>\n</html>\n";
+       << "</div>\n"
+       << kChartScript
+       << "</body>\n</html>\n";
     return os.str();
 }
 
@@ -594,12 +830,71 @@ std::string render_stats_section_html(const Stats& st, const StatsRenderOpts& op
           ".stats-section ul.facts li{padding:6px 0;border-bottom:1px solid #eee}"
           ".stats-section ul.facts li:last-child{border-bottom:0}"
           ".stats-section ul.facts .e{margin-right:6px}"
-          "</style>\n"
+       << kChartCss << "\n"
+       << "</style>\n"
        << "<h2>Conversation Stats</h2>\n";
 
     render_stats_body(os, st, opts);
 
-    os << "</div>\n";
+    os << kChartScript << "</div>\n";
+    return os.str();
+}
+
+namespace {
+
+// "1.2 MB" / "640 KB" / "512 B" — binary (1024) units, one decimal above KB.
+std::string human_bytes(long long bytes) {
+    if (bytes < 1024) return std::to_string(bytes) + " B";
+    double v = static_cast<double>(bytes);
+    static const char* kUnit[] = {"KB", "MB", "GB", "TB"};
+    int u = -1;
+    do {
+        v /= 1024.0;
+        ++u;
+    } while (v >= 1024.0 && u < 3);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.1f %s", v, kUnit[u]);
+    return buf;
+}
+
+}  // namespace
+
+std::string render_space_saved_html(long long bytes_before, long long bytes_after,
+                                    int files_compressed) {
+    if (bytes_before == 0) return "";  // nothing was compressed — no report
+    const long long saved = bytes_before - bytes_after;
+    const int pct = static_cast<int>(saved * 100 / bytes_before);  // may be 0 or negative
+    // Before vs after bar widths, scaled to the larger of the two so the longer
+    // bar fills the track. Guard the divide.
+    const long long denom = std::max<long long>(std::max(bytes_before, bytes_after), 1);
+    const int before_pct = static_cast<int>(bytes_before * 100 / denom);
+    const int after_pct = static_cast<int>(bytes_after * 100 / denom);
+
+    std::ostringstream os;
+    os << "<details class=\"sec\" open><summary>Media compression</summary>\n"
+       << "<style>.space-saved .ss-row{display:flex;align-items:center;gap:10px;margin:6px 0}"
+          ".space-saved .ss-lbl{flex:0 0 70px;font-size:.82rem;color:#48484a;text-align:right}"
+          ".space-saved .ss-track{flex:1;background:#eee;border-radius:6px;overflow:hidden;"
+          "height:18px}.space-saved .ss-fill{display:block;height:100%;border-radius:6px}"
+          ".space-saved .ss-before .ss-fill{background:#bbb}"
+          ".space-saved .ss-after .ss-fill{background:linear-gradient(90deg,#10b981,#34d399)}"
+          ".space-saved .ss-val{flex:0 0 84px;font-size:.8rem;color:#6b6b70}"
+          ".space-saved .ss-head{font-size:1.4rem;font-weight:700;color:#10b981}"
+          ".space-saved .ss-sub{color:#6b6b70;font-size:.85rem;margin:0 0 12px}</style>\n"
+       << "<div class=\"space-saved\">\n"
+       << "<div class=\"ss-head\">" << human_bytes(saved < 0 ? 0 : saved) << " saved</div>\n"
+       << "<p class=\"ss-sub\">" << group(saved) << " bytes (" << pct << "%) across <strong>"
+       << files_compressed << "</strong> file" << (files_compressed == 1 ? "" : "s")
+       << " compressed.</p>\n"
+       << "<div class=\"ss-row ss-before\"><span class=\"ss-lbl\">Before</span>"
+       << "<span class=\"ss-track\"><span class=\"ss-fill\" style=\"width:" << before_pct
+       << "%\"></span></span><span class=\"ss-val\">" << human_bytes(bytes_before)
+       << "</span></div>\n"
+       << "<div class=\"ss-row ss-after\"><span class=\"ss-lbl\">After</span>"
+       << "<span class=\"ss-track\"><span class=\"ss-fill\" style=\"width:" << after_pct
+       << "%\"></span></span><span class=\"ss-val\">" << human_bytes(bytes_after)
+       << "</span></div>\n"
+       << "</div></details>\n";
     return os.str();
 }
 
