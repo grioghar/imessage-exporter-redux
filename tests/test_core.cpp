@@ -9,9 +9,13 @@
 #include <string>
 #include <vector>
 
+#include <cstdio>
+#include <fstream>
+
 #include "imsg/attributed_body.hpp"
 #include "imsg/contact_book.hpp"
 #include "imsg/exporters.hpp"
+#include "imsg/location.hpp"
 #include "imsg/log.hpp"
 #include "imsg/models.hpp"
 #include "imsg/theme.hpp"
@@ -746,6 +750,119 @@ void test_timeline() {
     check(contains(h, "id=\"msg-"),             "timeline: message anchor id");
 }
 
+void test_stats_charts() {
+    imsg::Stats st;
+    imsg::stats_add(st, make_chat());
+    imsg::stats_add(st, make_chat());
+
+    // Default render: the chart switcher buttons, an inline SVG (line view), and
+    // the heatmap grid class are all present.
+    const std::string html = imsg::render_stats_html(st);
+    check(contains(html, "chart-tab"), "charts: switcher buttons present");
+    check(contains(html, "data-view=\"line\""), "charts: line view tab present");
+    check(contains(html, "<svg"), "charts: inline svg emitted");
+    check(contains(html, "hm-grid"), "charts: heatmap grid class present");
+
+    // Collapsible (default true) wraps sections in <details>/<summary>.
+    check(contains(html, "<details"), "charts: collapsible details present");
+    check(contains(html, "<summary"), "charts: collapsible summary present");
+
+    // collapsible=false uses plain <section>, no <details>.
+    imsg::StatsRenderOpts flat;
+    flat.collapsible = false;
+    const std::string flat_html = imsg::render_stats_html(st, flat);
+    check(!contains(flat_html, "<details"), "charts: no details when collapsible off");
+
+    // Space-saved report: human percent + heading; empty when nothing compressed.
+    const std::string ss = imsg::render_space_saved_html(1000000, 400000, 3);
+    check(contains(ss, "60"), "space: 60% saving rendered");
+    check(contains(ss, "Media compression"), "space: titled Media compression");
+    check_eq(imsg::render_space_saved_html(0, 0, 0), "", "space: empty when nothing compressed");
+}
+
+void test_theme_json() {
+    const std::string json =
+        "{ \"name\":\"sunset\", \"bg\":\"#1a0a2e\", \"text\":\"#fce8d8\","
+        " \"bubble_me\":\"#ff6b6b\", \"bubble_them\":\"#2a1a4a\","
+        " \"accent\":\"#ffd166\", \"font\":\"Georgia, serif\" }";
+    std::string name;
+    check(imsg::load_theme_from_json(json, &name), "theme-json: valid theme loads");
+    check_eq(name, "sunset", "theme-json: name captured");
+    check(imsg::is_theme("sunset"), "theme-json: registered theme is_theme true");
+    const std::string css = imsg::theme_css("sunset");
+    check(contains(css, "#ff6b6b"), "theme-json: css carries a theme color");
+    check(contains(css, ".bubble"), "theme-json: css still keys .bubble (base layout)");
+
+    // JSON without a "name" is rejected.
+    check(!imsg::load_theme_from_json("{ \"bg\":\"#000\" }"),
+          "theme-json: missing name rejected");
+
+    // The LCARS built-in keeps its marker and the shared .bubble structure.
+    const std::string lcars = imsg::theme_css("lcars");
+    check(contains(lcars, "/*theme:lcars*/"), "theme-json: lcars marker intact");
+    check(contains(lcars, ".bubble"), "theme-json: lcars keeps .bubble structure");
+}
+
+void test_location() {
+    // A fix 2 minutes from the query time -> high confidence + valid.
+    std::vector<imsg::LocationFix> fixes;
+    fixes.push_back({1700000000, 48.8566, 2.3522, ""});       // Paris-ish
+    fixes.push_back({1700000000 + 120, 48.8570, 2.3530, ""}); // +2 min
+    const imsg::LocationGuess g = imsg::guess_location(fixes, 1700000000);
+    check(g.valid && g.confidence >= 90, "location: 2-min fix is confident + valid");
+
+    // No fixes -> invalid.
+    const imsg::LocationGuess empty = imsg::guess_location({}, 1700000000);
+    check(!empty.valid, "location: empty fixes -> invalid");
+
+    // parse_takeout_records on a tiny temp file: latitudeE7/longitudeE7 are
+    // degrees*1e7 and keep their sign (here a southern/western point).
+    char tmpl[L_tmpnam];
+    std::tmpnam(tmpl);  // a unique path; we write our own JSON to it
+    std::string path = std::string(tmpl) + ".json";
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << "{\"locations\":[{\"timestampMs\":\"1614556800000\","
+               "\"latitudeE7\":-337654321,\"longitudeE7\":1511234567},"
+               "{\"timestampMs\":\"1614556900000\","
+               "\"latitudeE7\":487654321,\"longitudeE7\":-1221234567}]}";
+    }
+    const auto parsed = imsg::parse_takeout_records(path);
+    std::remove(path.c_str());
+    check(parsed.size() == 2, "location: parsed both takeout fixes");
+    if (parsed.size() == 2) {
+        check(parsed[0].lat < 0 && parsed[0].lon > 0,
+              "location: first fix signs (S, E) from E7");
+        check(parsed[1].lat > 0 && parsed[1].lon < 0,
+              "location: second fix signs (N, W) from E7");
+        // latitudeE7 487654321 == 48.7654321 degrees.
+        check(parsed[1].lat > 48.76 && parsed[1].lat < 48.77,
+              "location: E7 scaled to degrees (48.765...)");
+        check(parsed[0].epoch == 1614556800, "location: timestampMs -> epoch seconds");
+    }
+}
+
+void test_location_render() {
+    // A Chat with a background renders a background style + has-bg class.
+    imsg::Chat c;
+    c.participants = {"+15551234567"};
+    c.background_uri = "https://example.com/bg.jpg";
+    imsg::Message m;
+    m.sender = "+15551234567";
+    m.text = "hi";
+    m.location_label = "Paris";
+    m.location_confidence = 95;
+    c.messages.push_back(m);
+
+    const std::string h = imsg::render_html(c);
+    check(contains(h, "has-bg"), "loc-render: conversation gets has-bg class");
+    check(contains(h, "background-image:url('https://example.com/bg.jpg')"),
+          "loc-render: inline background image style");
+    check(contains(h, "loc-badge"), "loc-render: location badge rendered");
+    check(contains(h, "95%") && contains(h, "Paris"),
+          "loc-render: badge shows confidence + label");
+}
+
 }  // namespace
 
 int main() {
@@ -779,6 +896,10 @@ int main() {
     test_chat_title();
     test_themes();
     test_stats();
+    test_stats_charts();
+    test_theme_json();
+    test_location();
+    test_location_render();
     test_timeline();
 
     if (g_failures == 0) {

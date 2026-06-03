@@ -91,6 +91,7 @@ add_library(imsg_core STATIC
   src/exporters.cpp
   src/theme.cpp
   src/stats.cpp
+  src/location.cpp
   src/timeline.cpp
   src/contact_book.cpp
   src/vcard.cpp

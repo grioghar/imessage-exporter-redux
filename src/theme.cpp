@@ -1,5 +1,12 @@
 #include "imsg/theme.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <sstream>
+
 namespace imsg {
 namespace {
 
@@ -75,6 +82,20 @@ const char* kBaseCss =
     "overflow:hidden}"
     ".ogcard-host{color:#6e6e73;font-size:.72rem;margin-top:.3rem;"
     "text-transform:uppercase;letter-spacing:.02em}"
+    // Per-conversation background image (Chat::background_uri, applied inline by
+    // the exporter). Cover + fixed so it sits behind the whole thread; the inset
+    // box-shadow paints a readable light scrim over the image (a dark scrim in
+    // dark mode) without needing a pseudo-element, which the LCARS rail uses.
+    ".conversation.has-bg{background-size:cover;background-position:center;"
+    "background-attachment:fixed;border-radius:1rem;padding:1.5rem;"
+    "box-shadow:inset 0 0 0 100vmax rgba(255,255,255,.62)}"
+    "@media(prefers-color-scheme:dark){.conversation.has-bg{"
+    "box-shadow:inset 0 0 0 100vmax rgba(0,0,0,.55)}}"
+    // Correlated-location badge under a bubble: a muted, rounded pill.
+    ".loc-badge{display:inline-block;margin:.15rem .25rem 0;padding:.1rem .5rem;"
+    "font-size:.66rem;border-radius:.7rem;background:rgba(0,0,0,.06);color:#6e6e73;"
+    "white-space:nowrap}"
+    ".msg.me .loc-badge{align-self:flex-end}"
     // SMS/RCS conversations: sent bubbles use Apple's iOS green (#34c759) so
     // they visually match the native Messages green-bubble experience.
     ".sms-style .msg.me .bubble{background:#34c759;color:#000}"
@@ -86,21 +107,60 @@ const char* kBaseCss =
 // rules above stay intact. The leading /*theme:NAME*/ marker is a stable hook
 // for tests and a hint when reading exported HTML source.
 
-// LCARS: the Star Trek LCARS console — black field, rounded amber/orange + a
-// purple accent for "them", heavy weight. Bubbles get the big pill radius.
+// LCARS: the Star Trek: TNG/Voyager "Library Computer Access/Retrieval System"
+// console. Black field; the canonical LCARS palette (oranges #ff9900/#ffcc66,
+// purples #cc99cc, blues #9999ff, reds #cc6666); a left rail with big rounded
+// end-caps; a bold header bar with notched corners; pill bubbles tinted distinct
+// for me vs them; and a Eurostile-ish condensed sans stack. Layout-only changes
+// stay clear of the PDF page-break rules. The conversation gets a left padding
+// (the rail) drawn with a fixed pseudo-element so it reads as an authentic LCARS
+// frame without altering the message flow.
 const char* kLcarsCss =
     "/*theme:lcars*/"
-    "body{background:#000;color:#ffcc66;font-family:Helvetica,Arial,sans-serif;"
-    "font-weight:700}"
-    "header h1{color:#ff9966}header .meta{color:#cc99cc}"
-    ".msg .bubble{border-radius:1.2rem;font-weight:700}"
-    ".msg.them .bubble{background:#cc6699;color:#000}"
-    ".msg.me .bubble{background:#ff9933;color:#000}"
-    ".msg .info{color:#9999cc}.contact-name{color:#ff9966}"
-    ".contact-handle{color:#cc99cc}"
-    ".linkcard,.ogcard{background:#1a1a1a;color:#ffcc66;border-color:#ff9933}"
+    "body{background:#000;color:#ffcc66;"
+    "font-family:'Antonio','Oswald','Eurostile','Bebas Neue',"
+    "'Helvetica Neue Condensed',Helvetica,Arial,sans-serif;"
+    "letter-spacing:.02em;padding:0}"
+    // The conversation sits to the right of a rounded LCARS rail.
+    ".conversation{max-width:760px;margin:0 auto;padding:1.5rem 1.5rem 3rem 92px;"
+    "position:relative;min-height:100vh}"
+    // Left rail: a fat orange bar with big rounded end-caps (the LCARS elbow).
+    ".conversation::before{content:'';position:absolute;left:18px;top:1.5rem;"
+    "bottom:3rem;width:46px;background:#ff9900;"
+    "border-radius:46px 0 0 46px / 80px 0 0 80px}"
+    // Header: a bold condensed bar with a notched (cut) top-right corner, the
+    // hallmark LCARS header shape, in the amber swatch.
+    "header{background:#000;padding:0 0 1rem}"
+    "header h1{color:#000;background:#ff9966;display:inline-block;"
+    "padding:.35rem 2.2rem .35rem 1rem;font-weight:700;text-transform:uppercase;"
+    "letter-spacing:.08em;font-size:1.5rem;border-radius:0 0 0 14px;"
+    "clip-path:polygon(0 0,calc(100% - 18px) 0,100% 100%,0 100%)}"
+    "header .meta{color:#cc99cc;text-transform:uppercase;letter-spacing:.06em;"
+    "border-top:3px solid #9999ff;padding-top:.5rem;margin-top:.4rem}"
+    // Sender/time line in the cool blue swatch, uppercased like LCARS labels.
+    ".msg .info{color:#9999ff;text-transform:uppercase;letter-spacing:.05em}"
+    // Pill bubbles, fully rounded, in distinct LCARS swatches. Them = purple,
+    // me = orange; both on black with dark text for that high-contrast console
+    // look. The big radius gives the LCARS "lozenge" feel.
+    ".msg .bubble{border-radius:1.4rem;font-weight:600;border:2px solid #000;"
+    "box-shadow:0 0 0 1px rgba(255,153,0,.25)}"
+    ".msg.them .bubble{background:#cc99cc;color:#0a0010;"
+    "border-bottom-left-radius:1.4rem}"
+    ".msg.me .bubble{background:#ff9900;color:#1a0d00;"
+    "border-bottom-right-radius:1.4rem}"
+    ".bubble a{color:#9c2b00}"
+    // Large avatars echo the rail's amber; small ones the cool blue.
+    ".avatar.avatar-lg{background:#ffcc66;color:#000;border-radius:50% 50% 50% 14px}"
+    ".contact-name{color:#ff9966;text-transform:uppercase;letter-spacing:.04em}"
+    ".contact-handle{color:#9999ff}"
+    // Link/OG cards as dark LCARS panels with an orange edge + red accents.
+    ".linkcard,.ogcard{background:#140a00;color:#ffcc66;border-color:#ff9900;"
+    "border-radius:1rem}"
     ".linkcard-url,.ogcard-host,.ogcard-desc{color:#cc99cc}"
-    ".linkcard-host,.ogcard-title{color:#ff9966}";
+    ".linkcard-host,.ogcard-title{color:#ff9966}"
+    // SMS sent bubbles keep distinct from iMessage by using the LCARS red.
+    ".sms-style .msg.me .bubble{background:#cc6666;color:#160000}"
+    ".sms-style .msg.me .bubble a{color:#3a0000}";
 
 // Matrix: black terminal, phosphor-green monospace. Bubbles are outlined rather
 // than filled so the green-on-black "digital rain" feel reads cleanly.
@@ -146,26 +206,208 @@ const char* kAtariCss =
     ".linkcard,.ogcard{background:#1a3a5a;color:#fff;border-radius:0;"
     "border-color:#0a2a4a}.linkcard-host,.ogcard-title{color:#fff}";
 
+const char* kBuiltins[] = {"ios", "lcars", "matrix", "dot-matrix", "atari"};
+
+// A theme registered from JSON: just the color/font fields. CSS is generated on
+// demand by json_theme_css() from these, layered over kBaseCss.
+struct JsonTheme {
+    std::string bg, text, bubble_me, bubble_them, accent, font;
+};
+
+// Registry of JSON-loaded themes, keyed by name. A file-scope map (not thread
+// safe to mutate during render, same contract as the selected-theme global in
+// exporters.cpp): load all themes up front, then render.
+std::map<std::string, JsonTheme>& registry() {
+    static std::map<std::string, JsonTheme> r;
+    return r;
+}
+
+bool is_builtin(const std::string& name) {
+    for (const char* b : kBuiltins)
+        if (name == b) return true;
+    return false;
+}
+
+// --- Tiny tolerant flat-JSON parser ----------------------------------------
+// Parses a single JSON object whose values are all strings:
+//   { "k" : "v" , "k2":"v\"2" }
+// Handles surrounding/embedded whitespace, and \" / \\ escapes inside strings
+// (other escapes are passed through verbatim — sufficient for theme fields,
+// which are colors and font stacks). Nested objects/arrays/numbers are out of
+// scope; encountering them makes the parse fail (returns false). Deliberately
+// minimal: no external JSON dependency, lives in the SQLite-free core.
+
+void skip_ws(const std::string& s, std::size_t& i) {
+    while (i < s.size()) {
+        const char c = s[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') ++i;
+        else break;
+    }
+}
+
+// Reads a JSON string starting at the opening quote (s[i] == '"'); on success
+// `i` lands just past the closing quote and `out` holds the unescaped contents.
+bool parse_string(const std::string& s, std::size_t& i, std::string& out) {
+    if (i >= s.size() || s[i] != '"') return false;
+    ++i;
+    out.clear();
+    while (i < s.size()) {
+        const char c = s[i++];
+        if (c == '"') return true;
+        if (c == '\\') {
+            if (i >= s.size()) return false;
+            const char e = s[i++];
+            switch (e) {
+                case '"': out += '"'; break;
+                case '\\': out += '\\'; break;
+                case '/': out += '/'; break;
+                case 'n': out += '\n'; break;
+                case 't': out += '\t'; break;
+                case 'r': out += '\r'; break;
+                // Unknown escape: keep both chars so nothing is silently lost.
+                default: out += '\\'; out += e; break;
+            }
+        } else {
+            out += c;
+        }
+    }
+    return false;  // unterminated string
+}
+
+bool parse_flat_object(const std::string& s, std::map<std::string, std::string>& out) {
+    std::size_t i = 0;
+    skip_ws(s, i);
+    if (i >= s.size() || s[i] != '{') return false;
+    ++i;
+    skip_ws(s, i);
+    if (i < s.size() && s[i] == '}') return true;  // empty object {}
+    while (i < s.size()) {
+        skip_ws(s, i);
+        std::string key;
+        if (!parse_string(s, i, key)) return false;
+        skip_ws(s, i);
+        if (i >= s.size() || s[i] != ':') return false;
+        ++i;
+        skip_ws(s, i);
+        std::string val;
+        if (!parse_string(s, i, val)) return false;  // only string values
+        out[key] = val;
+        skip_ws(s, i);
+        if (i >= s.size()) return false;
+        if (s[i] == ',') { ++i; continue; }
+        if (s[i] == '}') return true;
+        return false;  // unexpected token
+    }
+    return false;
+}
+
+// Generates a theme override block from JSON colors, layered over kBaseCss. The
+// substitutions only retint paint (background, text, bubbles, accent, font), so
+// the shared layout + page-break rules stay intact — exactly like the built-in
+// override blocks. Empty fields are skipped so a partial theme still works.
+std::string json_theme_css(const JsonTheme& t) {
+    std::ostringstream os;
+    os << "/*theme:json*/";
+    if (!t.bg.empty() || !t.text.empty() || !t.font.empty()) {
+        os << "body{";
+        if (!t.bg.empty()) os << "background:" << t.bg << ";";
+        if (!t.text.empty()) os << "color:" << t.text << ";";
+        if (!t.font.empty()) os << "font-family:" << t.font << ";";
+        os << "}";
+    }
+    if (!t.accent.empty()) {
+        os << "header h1{color:" << t.accent << "}"
+           << ".contact-name,.linkcard-host,.ogcard-title{color:" << t.accent << "}"
+           << ".linkcard,.ogcard{border-color:" << t.accent << "}";
+    }
+    if (!t.text.empty())
+        os << "header .meta,.msg .info,.contact-handle{color:" << t.text
+           << ";opacity:.7}";
+    if (!t.bubble_them.empty())
+        os << ".msg.them .bubble{background:" << t.bubble_them << ";color:"
+           << (t.text.empty() ? "#fff" : t.text) << "}";
+    if (!t.bubble_me.empty())
+        os << ".msg.me .bubble{background:" << t.bubble_me << ";color:#fff}";
+    // Keep link/OG card bodies legible on the theme background.
+    if (!t.bg.empty())
+        os << ".linkcard,.ogcard{background:" << t.bg << "}";
+    return os.str();
+}
+
 }  // namespace
 
 std::vector<std::string> theme_names() {
-    return {"ios", "lcars", "matrix", "dot-matrix", "atari"};
+    std::vector<std::string> out(std::begin(kBuiltins), std::end(kBuiltins));
+    // Append JSON-loaded themes that aren't shadowing a built-in name.
+    for (const auto& kv : registry())
+        if (!is_builtin(kv.first)) out.push_back(kv.first);
+    return out;
 }
 
 bool is_theme(const std::string& name) {
-    for (const std::string& t : theme_names())
-        if (t == name) return true;
-    return false;
+    if (is_builtin(name)) return true;
+    return registry().find(name) != registry().end();
 }
 
 std::string theme_css(const std::string& name) {
     std::string css = kBaseCss;  // every theme starts from the shared layout
+    // A JSON-registered theme (that isn't a built-in name) generates its block
+    // from the stored colors. Built-in names always use the hardcoded blocks
+    // below so the five built-ins keep identical behavior.
+    if (!is_builtin(name)) {
+        auto it = registry().find(name);
+        if (it != registry().end()) return css + json_theme_css(it->second);
+    }
     if (name == "lcars") css += kLcarsCss;
     else if (name == "matrix") css += kMatrixCss;
     else if (name == "dot-matrix") css += kDotMatrixCss;
     else if (name == "atari") css += kAtariCss;
     // "ios" (and any unknown name) uses the base alone.
     return css;
+}
+
+bool load_theme_from_json(const std::string& json_text, std::string* name_out) {
+    std::map<std::string, std::string> kv;
+    if (!parse_flat_object(json_text, kv)) return false;
+    auto name_it = kv.find("name");
+    if (name_it == kv.end() || name_it->second.empty()) return false;  // name required
+
+    JsonTheme t;
+    auto get = [&](const char* k) {
+        auto it = kv.find(k);
+        return it == kv.end() ? std::string() : it->second;
+    };
+    t.bg = get("bg");
+    t.text = get("text");
+    t.bubble_me = get("bubble_me");
+    t.bubble_them = get("bubble_them");
+    t.accent = get("accent");
+    t.font = get("font");
+    registry()[name_it->second] = t;  // re-registering overwrites
+    if (name_out) *name_out = name_it->second;
+    return true;
+}
+
+int load_themes_from_dir(const std::string& dir_path) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(dir_path, ec)) return 0;
+    int loaded = 0;
+    for (const auto& entry : fs::directory_iterator(dir_path, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        const fs::path& p = entry.path();
+        std::string ext = p.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (ext != ".json") continue;
+        std::ifstream in(p, std::ios::binary);
+        if (!in) continue;
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        if (load_theme_from_json(buf.str())) ++loaded;
+    }
+    return loaded;
 }
 
 }  // namespace imsg
