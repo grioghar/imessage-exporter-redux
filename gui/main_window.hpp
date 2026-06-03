@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QFutureWatcher>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -24,6 +25,8 @@ class QComboBox;
 class QLineEdit;
 class QCheckBox;
 class QDateEdit;
+class QDateTimeEdit;
+class QSlider;
 class QPushButton;
 class QPlainTextEdit;
 class QLabel;
@@ -107,8 +110,8 @@ class MainWindow : public QWidget {
     QComboBox* themeCombo_ = nullptr;  // HTML/PDF visual theme (imsg::theme_names)
     QLineEdit* outputDir_ = nullptr;
     QLineEdit* meLabel_ = nullptr;
-    QDateEdit* since_ = nullptr;   // at minimumDate ("any start") = no lower bound
-    QDateEdit* until_ = nullptr;   // at today = no upper bound (through now)
+    QDateTimeEdit* since_ = nullptr;  // at minimumDateTime ("any start") = no lower bound
+    QDateTimeEdit* until_ = nullptr;  // at/after now = no upper bound (through now)
     QLabel* dateSummary_ = nullptr;  // live "what will be exported" line
     QCheckBox* combined_ = nullptr;
     QCheckBox* statsCover_ = nullptr;  // write a statistics cover page (00-statistics.html)
@@ -129,6 +132,26 @@ class MainWindow : public QWidget {
     QCheckBox* embedAttachments_ = nullptr;
     QCheckBox* hiddenAttachDir_ = nullptr;
     QCheckBox* richPreviews_ = nullptr;  // fetch Open Graph link previews (HTML/PDF)
+    // Media / efficiency tab controls (lightpress compression).
+    QCheckBox* compressMedia_ = nullptr;       // re-encode media through lightpress
+    QSlider*   compressQuality_ = nullptr;     // 1 (smallest) .. 100 (best)
+    QLabel*    compressQualityLabel_ = nullptr;  // live numeric readout
+    QCheckBox* compressStripExif_ = nullptr;   // drop EXIF when re-encoding
+    QCheckBox* mediaComparison_ = nullptr;     // also write the A/B comparison folder
+    // Security tab controls (encryption / signing / encrypted volume / location).
+    QCheckBox* encryptOutput_ = nullptr;       // password-protect the whole export
+    QLineEdit* encryptPassword_ = nullptr;     // transient — never persisted
+    QLineEdit* encryptConfirm_ = nullptr;      // confirmation field (must match)
+    QCheckBox* signPdf_ = nullptr;             // sign PDFs with a .p12 certificate
+    QLineEdit* pdfCertPath_ = nullptr;         // read-only; set via the picker
+    QPushButton* pdfCertBrowse_ = nullptr;     // "Choose .p12…"
+    QLineEdit* pdfCertPassword_ = nullptr;     // transient
+    QCheckBox* encryptedVolume_ = nullptr;     // store on a new macOS .sparseimage
+    QLineEdit* encryptedVolumePassword_ = nullptr;  // transient
+    QCheckBox* locationCorrelate_ = nullptr;   // annotate with best-guess location
+    QComboBox* locationSource_ = nullptr;      // takeout / photos / routined
+    QLineEdit* locationDataPath_ = nullptr;    // path to the chosen source
+    QPushButton* locationBrowse_ = nullptr;    // file/dir picker for the source
     QComboBox* contacts_ = nullptr;     // none / this Mac / file / from backup
     QLineEdit* contactsPath_ = nullptr;
     QPushButton* contactsBrowse_ = nullptr;
@@ -176,6 +199,10 @@ class MainWindow : public QWidget {
     QString pdfRealOut_;       // the user's chosen output dir for the PDFs
     QString pdfHtmlDir_;       // temp dir holding the intermediate HTML
     QStringList selectedPeople_;  // empty = all conversations
+    // Per-person background images chosen in the Select People dialog, keyed by
+    // the same canonical "Name — +handle" identifier used in selectedPeople_.
+    // Copied into ExportOptions::chat_backgrounds in buildInputs().
+    QMap<QString, QString> peopleBackgrounds_;
     bool jobRunning_ = false;
     bool resuming_ = false;       // current run is resuming a prior job
 };
