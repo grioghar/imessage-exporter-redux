@@ -49,6 +49,11 @@ void print_usage(std::ostream& os) {
        << "  --combined       Write one combined file instead of one per chat\n"
        << "  --theme NAME     HTML visual theme: " << theme_list() << " (default: ios)\n"
        << "  --stats          Also write a statistics cover page (00-statistics.html)\n"
+       << "  --timeline       Also write a timeline page (00-timeline.html)\n"
+       << "  --encrypt PASS   Encrypt output at rest: HTML becomes a self-decrypting\n"
+       << "                   page; other formats get a <file>.enc container\n"
+       << "  --location SRC:PATH  Correlate message times with a location source\n"
+       << "                   (e.g. takeout:/path/to/Records.json) to add badges\n"
        << "  --copy-attachments  Copy attachment files into <output>/attachments\n"
        << "  --embed-attachments Inline attachments as base64 in each file (HTML/JSON)\n"
        << "  --hidden-attachments  Name each conversation's attachment folder \".<name>\"\n"
@@ -205,6 +210,8 @@ int main(int argc, char** argv) {
             opts.combined = true;
         } else if (arg == "--stats") {
             opts.stats_cover = true;
+        } else if (arg == "--timeline") {
+            opts.timeline_page = true;
         } else if (arg == "--copy-attachments") {
             opts.copy_attachments = true;
         } else if (arg == "--embed-attachments") {
@@ -227,6 +234,29 @@ int main(int argc, char** argv) {
             if (!take_value(argc, argv, i, "--theme", opts.html_theme)) return 2;
         } else if (arg == "--contacts-db") {
             if (!take_value(argc, argv, i, "--contacts-db", opts.contacts_path)) return 2;
+        } else if (arg == "--encrypt") {
+            std::string v;
+            if (!take_value(argc, argv, i, "--encrypt", v)) return 2;
+            if (v.empty()) {
+                std::cerr << "error: --encrypt requires a non-empty password\n";
+                return 2;
+            }
+            opts.encrypt_output = true;
+            opts.encrypt_password = v;
+        } else if (arg == "--location") {
+            // SRC:PATH, split on the FIRST ':' so a Windows path's drive colon
+            // (e.g. "takeout:C:\\Records.json") stays with the path.
+            std::string v;
+            if (!take_value(argc, argv, i, "--location", v)) return 2;
+            std::string::size_type colon = v.find(':');
+            if (colon == std::string::npos || colon == 0 || colon + 1 >= v.size()) {
+                std::cerr << "error: --location expects SRC:PATH (e.g. "
+                             "takeout:/path/to/Records.json)\n";
+                return 2;
+            }
+            opts.location_source = v.substr(0, colon);
+            opts.location_data_path = v.substr(colon + 1);
+            opts.location_correlate = true;
         } else if (arg == "--since") {
             std::string v;
             if (!take_value(argc, argv, i, "--since", v)) return 2;
@@ -329,8 +359,12 @@ int main(int argc, char** argv) {
               << output_dir << " as " << format_name;
     if (opts.combined) std::cout << " (combined)";
     if (opts.stats_cover) std::cout << " (+ statistics page)";
+    if (opts.timeline_page) std::cout << " (+ timeline page)";
     if (opts.copy_attachments)
         std::cout << ", copied " << summary.attachments_copied << " attachment(s)";
+    if (opts.location_correlate) std::cout << " (location-correlated)";
+    if (opts.encrypt_output && !opts.encrypt_password.empty())
+        std::cout << " (encrypted)";
     std::cout << ".\n";
     return 0;
 }
