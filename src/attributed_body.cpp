@@ -1,5 +1,6 @@
 #include "imsg/attributed_body.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -14,8 +15,31 @@ const std::array<std::string, 3> kMarkers = {
     "NSMutableString", "NSString", "NSAttributedString"};
 
 // Candidate counts of archiver header bytes between the marker and the length
-// prefix. Real databases use 5; nearby values are tried for robustness.
+// prefix, used only as fallbacks. Real databases use 5; nearby values are tried
+// for robustness when the type-encoding byte can't be located.
 constexpr std::array<std::size_t, 3> kHeaderOffsets = {5, 6, 4};
+
+// Tokens that appear ONLY in typedstream archiver metadata / iMessage attribute
+// runs, never in human message text. If one leaks into the decoded string
+// (because a length prefix over-read into the trailing attribute runs — the
+// classic "weird letters over an attachment" symptom), the text is cut here.
+// Deliberately limited to strings no human would type verbatim: the iMessage
+// internal key prefix and the archiver magic. (Bare "NSString" etc. are NOT
+// listed — a developer might legitimately type them.)
+constexpr std::array<std::string_view, 2> kTrailingSentinels = {
+    "__kIM", "streamtyped"};
+
+// Truncates `s` at the first archiver-metadata sentinel, if any.
+void trim_at_sentinels(std::string& s) {
+    std::size_t cut = std::string::npos;
+    for (std::string_view tok : kTrailingSentinels) {
+        std::size_t p = s.find(tok.data(), 0, tok.size());
+        if (p < cut) cut = p;
+    }
+    if (cut != std::string::npos) s.erase(cut);
+    // Drop trailing whitespace/control left behind by the cut.
+    while (!s.empty() && static_cast<unsigned char>(s.back()) <= 0x20) s.pop_back();
+}
 
 // Reject runs containing low control characters (excluding tab/newline), which
 // indicate the payload start was mis-located.
@@ -53,31 +77,62 @@ bool is_valid_utf8(std::string_view s) {
     return true;
 }
 
-// Parses the length-prefixed UTF-8 string that follows a class marker.
-// Operates on a view into the original blob; only the returned text allocates.
+// Reads the length-prefixed string at `offset` within `payload` into `out`.
+// Returns true if a valid, non-garbage UTF-8 run was extracted.
+bool read_length_prefixed(std::string_view payload, std::size_t offset,
+                          std::string& out) {
+    if (offset >= payload.size()) return false;
+    unsigned char marker = static_cast<unsigned char>(payload[offset]);
+    std::size_t length;
+    std::size_t body_start;
+    if (marker == 0x81) {
+        if (offset + 2 >= payload.size()) return false;
+        length = static_cast<unsigned char>(payload[offset + 1]) |
+                 (static_cast<unsigned char>(payload[offset + 2]) << 8);
+        body_start = offset + 3;
+    } else if (marker == 0x82) {  // 32-bit length (very long messages)
+        if (offset + 4 >= payload.size()) return false;
+        length = static_cast<unsigned char>(payload[offset + 1]) |
+                 (static_cast<unsigned char>(payload[offset + 2]) << 8) |
+                 (static_cast<unsigned char>(payload[offset + 3]) << 16) |
+                 (static_cast<std::size_t>(static_cast<unsigned char>(payload[offset + 4])) << 24);
+        body_start = offset + 5;
+    } else if (marker < 0x80) {  // single-byte literal length (0–127)
+        length = marker;
+        body_start = offset + 1;
+    } else {
+        return false;  // 0x83–0xFF here is not a valid length prefix
+    }
+    if (length == 0 || body_start + length > payload.size()) return false;
+
+    std::string_view text = payload.substr(body_start, length);
+    if (text.empty() || !is_valid_utf8(text) || looks_like_garbage(text)) return false;
+    out.assign(text);
+    trim_at_sentinels(out);  // belt-and-suspenders if the length over-read
+    return !out.empty();
+}
+
+// Parses the length-prefixed UTF-8 string that follows a class marker. The
+// typedstream header ends in the ivar type-encoding byte ('+' 0x2b or '*' 0x2a)
+// for the inline C-string, immediately followed by the length prefix. We locate
+// that type byte and read the length from right after it, rather than guessing a
+// fixed header size — the fixed guess mis-fires on attachment messages and pulls
+// trailing attribute-run keys into the result (the "weird letters" bug).
 std::string read_inline_string(std::string_view payload) {
-    for (std::size_t offset : kHeaderOffsets) {
-        if (offset >= payload.size()) continue;
-
-        unsigned char marker = static_cast<unsigned char>(payload[offset]);
-        std::size_t length;
-        std::size_t body_start;
-        if (marker == 0x81) {
-            if (offset + 2 >= payload.size()) continue;
-            length = static_cast<unsigned char>(payload[offset + 1]) |
-                     (static_cast<unsigned char>(payload[offset + 2]) << 8);
-            body_start = offset + 3;
-        } else {
-            length = marker;
-            body_start = offset + 1;
+    std::vector<std::size_t> offsets;
+    const std::size_t scan = std::min<std::size_t>(payload.size(), 12);
+    for (std::size_t i = 0; i < scan; ++i) {
+        unsigned char b = static_cast<unsigned char>(payload[i]);
+        if (b == 0x2b || b == 0x2a) {  // type-encoding byte: length follows
+            offsets.push_back(i + 1);
+            break;
         }
-        if (length == 0) continue;
-        if (body_start + length > payload.size()) continue;
+    }
+    for (std::size_t o : kHeaderOffsets) offsets.push_back(o);  // fallbacks
 
-        std::string_view text = payload.substr(body_start, length);
-        if (!text.empty() && is_valid_utf8(text) && !looks_like_garbage(text)) {
-            return std::string(text);
-        }
+    std::string out;
+    for (std::size_t offset : offsets) {
+        if (read_length_prefixed(payload, offset, out)) return out;
     }
     return std::string();
 }
@@ -86,9 +141,13 @@ std::string read_inline_string(std::string_view payload) {
 std::string decode_impl(std::string_view data) {
     if (data.empty()) return std::string();
 
-    // Trailing attribute runs follow an NSDictionary/NSNumber; dropping from the
-    // first such marker avoids decoding archiver metadata as text.
-    for (const char* tail : {"NSDictionary", "NSNumber"}) {
+    // Trailing attribute runs follow the text as an (NSMutable)Dictionary of
+    // NSNumber-keyed iMessage attributes; dropping from the first such marker
+    // avoids decoding archiver metadata as text. "NSMutableDictionary" is listed
+    // separately because it does not contain "NSDictionary" as a substring, and
+    // "__kIM" catches the iMessage attribute keys directly.
+    for (const char* tail :
+         {"NSMutableDictionary", "NSDictionary", "NSNumber", "__kIM"}) {
         std::size_t idx = data.find(tail);
         if (idx != std::string_view::npos) data = data.substr(0, idx);
     }
