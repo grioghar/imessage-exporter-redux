@@ -12,7 +12,9 @@
 
 #include "imsg/contact_store.hpp"
 #include "imsg/contacts.hpp"
+#include "imsg/crypto.hpp"
 #include "imsg/database.hpp"
+#include "imsg/location.hpp"
 #include "imsg/log.hpp"
 #include "imsg/stats.hpp"
 #include "imsg/timeline.hpp"
@@ -239,6 +241,111 @@ void embed_chat_attachments(Chat& chat,
     }
 }
 
+// PBKDF2 round count for encryption-at-rest. Matches crypto.hpp's default so the
+// self-decrypting HTML and the .enc containers use the same work factor.
+constexpr int kEncryptIterations = 250000;
+
+// Reads a whole file into a string (binary). Returns false if it can't be read.
+bool read_file(const fs::path& path, std::string& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    out.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    return true;
+}
+
+// Encrypts one already-written output file in place / alongside it, dispatching
+// by extension. HTML files are rewrapped as a self-decrypting page that still
+// opens in any browser; everything else becomes a "<file>.enc" JSON container
+// (AES-256-GCM via PBKDF2) and the plaintext original is removed. The password
+// is never logged. A failure here is non-fatal: the (plaintext) file is left in
+// place and a warning is logged, since the conversation data is already on disk.
+// Takes an fs::path (not a string) so Unicode names survive on Windows, where
+// path.string() would lossily round-trip through the active code page.
+void encrypt_output_file(const fs::path& path, const ExportOptions& opts) {
+    std::error_code ec;
+    const std::string name = path.filename().string();  // for logging only
+    std::string contents;
+    if (!read_file(path, contents)) {
+        log_warn("could not read for encryption: " + name);
+        return;
+    }
+
+    std::string ext = path.extension().string();
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    if (ext == ".html" || ext == ".htm") {
+        // Re-wrap the page so it decrypts in-browser; overwrite the same .html.
+        std::string wrapped =
+            self_decrypting_html(opts.encrypt_password, contents, kEncryptIterations);
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            log_warn("could not rewrite encrypted HTML: " + name);
+            return;
+        }
+        out << wrapped;
+        log_info("encrypted (self-decrypting HTML): " + name);
+        return;
+    }
+
+    // Non-HTML: write "<file>.enc" JSON container, then delete the plaintext.
+    EncryptedBlob blob =
+        encrypt_with_password(opts.encrypt_password, contents, kEncryptIterations);
+    fs::path enc_path = path;
+    enc_path += ".enc";  // append to the full name (keeps the original extension)
+    std::ofstream out(enc_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        log_warn("could not write encrypted container: " + enc_path.filename().string());
+        return;
+    }
+    // The base64 alphabet (A-Za-z0-9+/=) contains no JSON-special characters, so
+    // these values need no escaping.
+    out << "{\"alg\":\"AES-256-GCM\",\"kdf\":\"PBKDF2-SHA256\",\"iter\":"
+        << blob.iterations << ",\"salt\":\"" << blob.salt_b64 << "\",\"iv\":\""
+        << blob.iv_b64 << "\",\"ct\":\"" << blob.ciphertext_b64 << "\"}";
+    out.close();
+    fs::remove(path, ec);  // drop the plaintext original
+    if (ec) log_warn("encrypted container written but plaintext remains: " + name);
+    log_info("encrypted (container): " + enc_path.filename().string());
+}
+
+// Resolves a per-conversation background for `chat` from opts.chat_backgrounds,
+// keyed by the chat identifier/guid/title or by any participant handle (so a
+// background set on a person applies to the 1:1 chat). When the match is a local
+// file path and the export is self-contained (embed_attachments), the file is
+// inlined as a data URI; otherwise the value (path or data URI) passes through.
+void apply_chat_background(Chat& chat, const ExportOptions& opts) {
+    if (opts.chat_backgrounds.empty()) return;
+
+    const auto& bg = opts.chat_backgrounds;
+    const std::string* hit = nullptr;
+    auto look = [&](const std::string& key) {
+        if (hit || key.empty()) return;
+        auto it = bg.find(key);
+        if (it != bg.end()) hit = &it->second;
+    };
+    look(chat.chat_identifier);
+    look(chat.guid);
+    look(chat.title());
+    for (const std::string& p : chat.participants) look(p);
+    if (!hit) return;
+
+    std::string value = *hit;
+    // Inline a local file only for self-contained exports; leave URLs/data URIs
+    // and pass-through paths untouched.
+    const bool is_uri = value.rfind("data:", 0) == 0 ||
+                        value.rfind("http://", 0) == 0 ||
+                        value.rfind("https://", 0) == 0;
+    if (opts.embed_attachments && !is_uri) {
+        std::string src = expand_user_path(value);
+        std::error_code ec;
+        std::string bytes;
+        if (fs::exists(fs::u8path(src), ec) && !ec && read_file(fs::u8path(src), bytes)) {
+            value = "data:" + guess_mime(src, "") + ";base64," + base64_encode(bytes);
+        }
+    }
+    chat.background_uri = value;
+}
+
 }  // namespace
 
 ExportSummary export_database(const std::string& db_path,
@@ -300,6 +407,16 @@ ExportSummary export_database(const std::string& db_path,
         // Chats with messages loaded; populated when timeline_page is enabled.
         std::vector<Chat> timeline_chats;
 
+        // Location correlation: load the external fix set ONCE (not per chat).
+        // An empty/unknown source yields no fixes, so annotate_locations no-ops.
+        std::vector<LocationFix> location_fixes;
+        if (opts.location_correlate && !opts.location_data_path.empty()) {
+            location_fixes =
+                load_location_fixes(opts.location_source, opts.location_data_path);
+            log_info("location: loaded " + std::to_string(location_fixes.size()) +
+                     " fix(es) from " + opts.location_source);
+        }
+
         // Derive render options from the export options flags once up front.
         StatsRenderOpts srOpts;
         srOpts.timeline    = opts.stats_timeline;
@@ -316,12 +433,13 @@ ExportSummary export_database(const std::string& db_path,
 
         // For combined export, one file streams every conversation in turn.
         std::ofstream combined;
+        fs::path combined_path;
         if (opts.combined) {
-            fs::path path =
+            combined_path =
                 out_path(out_dir, std::string(combined_stem()) + "." + ext);
-            combined.open(path, std::ios::binary);
+            combined.open(combined_path, std::ios::binary);
             if (!combined) {
-                summary.error = "cannot write '" + path.string() + "'";
+                summary.error = "cannot write '" + combined_path.string() + "'";
                 return summary;
             }
             combined << combined_prologue(fmt);
@@ -350,6 +468,19 @@ ExportSummary export_database(const std::string& db_path,
 
             db.load_messages(chat);  // bodies for just this conversation
             if (chat.messages.empty()) continue;  // e.g. filtered out by date
+
+            // Annotate this conversation's messages with best-guess locations
+            // before anything renders or stashes it (timeline copy included), so
+            // the HTML shows location badges. annotate_locations takes a vector;
+            // wrap the single chat, then read the labels back onto it.
+            if (!location_fixes.empty()) {
+                std::vector<Chat> one{std::move(chat)};
+                annotate_locations(one, location_fixes);
+                chat = std::move(one.front());
+            }
+
+            // Per-conversation background (by chat identifier or participant).
+            apply_chat_background(chat, opts);
 
             // Fold this conversation into the cover-page accumulator while its
             // bodies are in memory (they're cleared at the bottom of the loop).
@@ -393,6 +524,9 @@ ExportSummary export_database(const std::string& db_path,
                 } else {
                     out << render(chat, fmt);
                 }
+                out.close();  // flush before any in-place encryption
+                if (opts.encrypt_output && !opts.encrypt_password.empty())
+                    encrypt_output_file(path, opts);
             }
 
             // Release this conversation's bodies before moving to the next one.
@@ -402,7 +536,12 @@ ExportSummary export_database(const std::string& db_path,
             if (opts.on_progress) opts.on_progress(written, total);
         }
 
-        if (opts.combined) combined << combined_epilogue(fmt);
+        if (opts.combined) {
+            combined << combined_epilogue(fmt);
+            combined.close();  // flush before any in-place encryption
+            if (opts.encrypt_output && !opts.encrypt_password.empty())
+                encrypt_output_file(combined_path, opts);
+        }
 
         // Statistics cover page: a self-contained HTML recap of the whole run.
         // Named "00-..." so it sorts to the top of the output folder. A write
@@ -412,7 +551,10 @@ ExportSummary export_database(const std::string& db_path,
             std::ofstream out(path, std::ios::binary);
             if (out) {
                 out << render_stats_html(stats, srOpts);
+                out.close();  // flush before any in-place encryption
                 log_info("wrote statistics cover page: " + path.filename().string());
+                if (opts.encrypt_output && !opts.encrypt_password.empty())
+                    encrypt_output_file(path, opts);
             } else {
                 log_warn("could not write statistics cover page to " + path.string());
             }
@@ -432,7 +574,10 @@ ExportSummary export_database(const std::string& db_path,
             std::ofstream tout(path, std::ios::binary);
             if (tout) {
                 tout << render_timeline_html(timeline_chats, tlOpts, opts.me_photo_uri);
+                tout.close();  // flush before any in-place encryption
                 log_info("wrote timeline page: " + path.filename().string());
+                if (opts.encrypt_output && !opts.encrypt_password.empty())
+                    encrypt_output_file(path, opts);
             } else {
                 log_warn("could not write timeline page to " + path.string());
             }

@@ -39,6 +39,28 @@ Only messages on/before \fIDATE\fR; a date alone means the end of that day.
 .B --combined
 Write one combined file instead of one per conversation.
 .TP
+.BI --theme " NAME"
+HTML visual theme. Default: \fBios\fR. Ignored by non-HTML formats.
+.TP
+.B --stats
+Also write a statistics cover page (\fI00-statistics.html\fR).
+.TP
+.B --timeline
+Also write a timeline page (\fI00-timeline.html\fR): a swimlane view of every
+conversation.
+.TP
+.BI --encrypt " PASSWORD"
+Encrypt the export at rest with \fIPASSWORD\fR. HTML files are rewritten as
+self-decrypting pages that prompt for the password and decrypt in any modern
+browser (AES-256-GCM via Web Crypto); other formats are replaced by a
+\fI<file>.enc\fR JSON container and the plaintext original is removed.
+.TP
+.BI --location " SRC:PATH"
+Correlate each message's timestamp with an external location history and add a
+best-guess location badge to the HTML. \fISRC\fR is the source kind (currently
+\fBtakeout\fR for a Google Takeout \fIRecords.json\fR); \fIPATH\fR is the file.
+Split on the first colon, e.g. \fBtakeout:/path/to/Records.json\fR.
+.TP
 .B --copy-attachments
 Copy attachment files into \fI<output>/attachments\fR and link them.
 .TP
