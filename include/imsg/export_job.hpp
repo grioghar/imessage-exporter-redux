@@ -2,8 +2,10 @@
 // iOS/embedding bridge so the streaming loop lives in one place.
 #pragma once
 
+#include <cstdint>
 #include <ctime>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,45 @@ struct ExportOptions {
     std::string timeline_density = "auto";  // auto | hour | day | week | month
     std::string me_photo_uri;               // optional data URI for the Me avatar
 
+    // ── Media compression (lightpress) ────────────────────────────────────
+    // Re-encode copied/embedded images through the lightpress codec to shrink
+    // the export. Requires copy_attachments or embed_attachments to have media.
+    bool compress_media = false;
+    int  compress_quality = 80;        // 1 (smallest) – 100 (best); slider in GUI
+    bool compress_strip_exif = true;   // drop EXIF/metadata while re-encoding
+    // Produce a side-by-side "image-movie-comparison/" folder: a random sample
+    // of each media type encoded by lightpress AND by ffmpeg, for A/B tuning.
+    // TEMPORARY tuning aid — remove the folder once happy with the settings.
+    bool media_comparison = false;
+    int  media_comparison_samples = 5;  // per media type
+
+    // ── Security: encryption-at-rest + signing ────────────────────────────
+    // Password-protect the export. For HTML the ciphertext is embedded with an
+    // inline Web Crypto decryptor (self-decrypting page); JSON/TXT get an
+    // encrypted container. Empty password = no encryption.
+    bool encrypt_output = false;
+    std::string encrypt_password;      // transient; never persisted in plaintext
+    // Sign generated PDFs with a PKCS#12 (.p12) certificate.
+    bool sign_pdf = false;
+    std::string pdf_cert_path;
+    std::string pdf_cert_password;     // transient
+    // Write the export onto a newly-created, password-protected encrypted disk
+    // image (macOS .sparseimage via hdiutil). Empty password = disabled.
+    bool encrypted_volume = false;
+    std::string encrypted_volume_password;  // transient
+
+    // ── Location correlation ──────────────────────────────────────────────
+    // Annotate messages/timeline with a best-guess location + confidence by
+    // cross-referencing timestamps against a location source.
+    bool location_correlate = false;
+    std::string location_source;       // "photos" | "routined" | "takeout"
+    std::string location_data_path;    // path to the chosen source
+
+    // ── Per-conversation backgrounds (configured in the GUI's Select People) ─
+    // Maps a chat identifier (or participant handle) to a background/poster
+    // image (file path or data URI) rendered behind that conversation.
+    std::map<std::string, std::string> chat_backgrounds;
+
     // Copy each attachment's file into <out_dir>/attachments/... and link to it
     // from the export, instead of exporting only attachment metadata.
     bool copy_attachments = false;
@@ -98,6 +139,11 @@ struct ExportSummary {
     bool ok = false;
     int conversations = 0;      // number of conversations written on success
     int attachments_copied = 0;  // files copied when copy_attachments is set
+    // Media-compression accounting (populated when compress_media is set), used
+    // by the statistics page's before/after "space saved" report.
+    std::int64_t media_bytes_before = 0;
+    std::int64_t media_bytes_after = 0;
+    int media_files_compressed = 0;
     std::string error;          // human-readable message when ok == false
 };
 
