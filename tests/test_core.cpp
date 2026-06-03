@@ -75,6 +75,37 @@ void test_attributed_body() {
              "attributed: garbage");
 }
 
+// A real attachment/styled message carries the text followed by a typedstream
+// attribute dictionary and iMessage attribute keys (__kIM...). None of that
+// archiver metadata may leak into the decoded text — that leak is the
+// long-standing "weird letters over an attachment" bug.
+void test_attributed_body_attribute_noise() {
+    std::string blob = "streamtyped";
+    blob += '\x81';
+    blob += "NSMutableString";
+    blob += std::string("\x01\x94\x84\x01\x2b", 5);  // header ends in '+' type byte
+    blob += static_cast<char>(5);                     // length = 5
+    blob += "Hello";
+    blob += std::string("\x86\x84", 2);               // typedstream object end
+    blob += "NSMutableDictionary";
+    blob += "__kIMMessagePartAttributeName";
+    blob += "__kIMFileTransferGUIDAttributeName";
+    check_eq(imsg::decode_attributed_body(blob), "Hello",
+             "attributed: trailing attribute keys excluded");
+
+    // Attachment-only message: text is just the object-replacement char, then
+    // attribute metadata. Decode keeps the placeholder; sanitize_text drops it.
+    std::string att = "streamtyped";
+    att += '\x81';
+    att += "NSMutableString";
+    att += std::string("\x01\x94\x84\x01\x2b", 5);
+    att += static_cast<char>(3);                      // length = 3
+    att += "\xEF\xBF\xBC";                            // U+FFFC
+    att += "NSMutableDictionary__kIMFileTransferGUIDAttributeName";
+    check_eq(imsg::sanitize_text(imsg::decode_attributed_body(att)), "",
+             "attributed: attachment placeholder sanitizes to empty");
+}
+
 void test_sanitize_text() {
     using imsg::sanitize_text;
     check_eq(sanitize_text("Hi\xEF\xBF\xBC there"), "Hi there",
@@ -719,6 +750,7 @@ void test_timeline() {
 
 int main() {
     test_attributed_body();
+    test_attributed_body_attribute_noise();
     test_sanitize_text();
     test_time_util();
     test_format_parsing();
