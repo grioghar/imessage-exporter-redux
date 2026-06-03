@@ -99,6 +99,26 @@ add_library(imsg_core STATIC
 )
 target_include_directories(imsg_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# --- Optional media compression: lightpress (vendor/lightpress submodule) ---
+# Zero-dependency C++17 image codec. Pulled in as a top-level git submodule;
+# EXCLUDE_FROM_ALL so lightpress's OWN tests/benchmarks never build in our CI —
+# only the "lightpress" static lib builds, and only because imsg_db links it.
+# lightpress's nested vendor/ffmpeg submodule is NOT initialized (CI checks out
+# submodules non-recursively); lightpress builds fine without it (ffmpeg is a
+# runtime subprocess there, never a link dependency). When the submodule is
+# absent (e.g. a source tarball), IMSG_HAVE_LIGHTPRESS stays undefined and
+# src/compress.cpp compiles as a no-op so the tree still builds.
+set(IMSG_HAVE_LIGHTPRESS OFF)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/lightpress/CMakeLists.txt")
+  add_subdirectory(vendor/lightpress EXCLUDE_FROM_ALL)
+  set(IMSG_HAVE_LIGHTPRESS ON)
+  message(STATUS "imsg: lightpress media compression enabled")
+else()
+  message(STATUS
+    "imsg: vendor/lightpress submodule absent — media compression disabled "
+    "(run 'git submodule update --init vendor/lightpress' to enable)")
+endif()
+
 # --- Tests (no SQLite needed) ----------------------------------------------
 enable_testing()
 add_executable(imsg_tests tests/test_core.cpp)
@@ -110,10 +130,18 @@ add_test(NAME core COMMAND imsg_tests)
 find_package(SQLite3)
 if(SQLite3_FOUND)
   # Reader + streaming export engine, shared by the CLI and the embedding bridge.
+  # compress.cpp does image re-encoding via lightpress; it compiles either way
+  # (no-op without the submodule) — see the IMSG_HAVE_LIGHTPRESS guard below.
   add_library(imsg_db STATIC
     src/database.cpp src/export_job.cpp src/contacts.cpp src/backup.cpp
-    src/contact_store.cpp)
+    src/contact_store.cpp src/compress.cpp)
   target_link_libraries(imsg_db PUBLIC imsg_core SQLite::SQLite3)
+
+  # Wire lightpress into compress.cpp only when the submodule is present.
+  if(IMSG_HAVE_LIGHTPRESS)
+    target_compile_definitions(imsg_db PRIVATE IMSG_HAVE_LIGHTPRESS=1)
+    target_link_libraries(imsg_db PRIVATE lightpress)
+  endif()
 
   # CLI binary.
   add_executable(imessage-exporter src/main.cpp)
