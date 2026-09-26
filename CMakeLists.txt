@@ -150,6 +150,15 @@ if(SQLite3_FOUND)
   install(TARGETS imessage-exporter RUNTIME DESTINATION bin)
   install(FILES man/imessage-exporter.1 DESTINATION share/man/man1)
 
+  # Golden-file tests: run the CLI on the synthetic tests/fixtures/chat.db in
+  # every format and diff against tests/golden/. Bash-only, so skipped on
+  # Windows (the ci.yml build-test matrix is Linux + macOS).
+  if(NOT WIN32)
+    add_test(NAME golden
+      COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.sh
+              $<TARGET_FILE:imessage-exporter>)
+  endif()
+
   # --- Desktop GUI: needs Qt6 Widgets (one C++ app for macOS/Windows/Linux) ---
   find_package(Qt6 COMPONENTS Widgets Concurrent Network Svg QUIET)
   if(Qt6_FOUND)

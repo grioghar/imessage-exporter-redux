@@ -1,0 +1,14 @@
++15550100001
+Service: iMessage
+Participants: +15550100001
+Messages: 2
+============================================================
+
+[2024-03-03 12:00:00] +15550100001:
+  multi
+line
+message with "quotes" & <angles>
+
+[2024-03-03 12:05:00] Me:
+  a link: https://example.com/test-page
+

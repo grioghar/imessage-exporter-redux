@@ -1,0 +1,41 @@
+{
+  "guid": "SMS;-;+15550100002",
+  "title": "+15550100002",
+  "chat_identifier": "+15550100002",
+  "display_name": "",
+  "service": "SMS",
+  "participants": ["+15550100002"],
+  "message_count": 3,
+  "messages": [
+    {
+      "guid": "FAKE-0009",
+      "date": "2024-04-09 08:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100002",
+      "service": "SMS",
+      "text": "old-style seconds timestamp",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0007",
+      "date": "2024-04-10 08:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100002",
+      "service": "SMS",
+      "text": "sms hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0008",
+      "date": "2024-04-10 08:01:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "SMS",
+      "text": "sms reply from me",
+      "attachments": []
+    }
+  ]
+}

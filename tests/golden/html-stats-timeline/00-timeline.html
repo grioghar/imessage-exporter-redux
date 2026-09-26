@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Message Timeline</title>
+<style>
+body{font-family:-apple-system,sans-serif;margin:0;background:#fff;}
+#tl-root{max-width:1200px;margin:0 auto;}
+#tl-slider{position:sticky;top:0;background:#f5f5f7;padding:12px 16px;z-index:10;border-bottom:1px solid #e5e5ea;}
+#tl-track{position:relative;height:24px;margin-bottom:4px;}
+#tl-lo,#tl-hi{position:absolute;width:100%;height:6px;-webkit-appearance:none;background:transparent;pointer-events:none;}
+#tl-lo{pointer-events:auto;}
+#tl-lo::-webkit-slider-thumb,#tl-hi::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#007aff;cursor:pointer;pointer-events:auto;}
+#tl-fill{position:absolute;height:6px;background:#007aff;border-radius:3px;top:9px;}
+#tl-track-bg{position:absolute;width:100%;height:6px;background:#e5e5ea;border-radius:3px;top:9px;}
+#tl-labels{display:flex;justify-content:space-between;font-size:12px;color:#666;}
+#tl-axis{position:relative;height:28px;margin-left:130px;border-bottom:1px solid #e5e5ea;}
+.tl-tick{position:absolute;font-size:11px;color:#8e8e93;transform:translateX(-50%);white-space:nowrap;}
+.tl-lane{display:flex;border-bottom:1px solid #f2f2f7;min-height:40px;}
+.tl-lane-header{width:130px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:13px;overflow:hidden;}
+.tl-lane-body{flex:1;position:relative;min-height:40px;}
+.msg-dot{position:absolute;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);top:50%;cursor:pointer;transition:opacity 0.1s,transform 0.1s;text-decoration:none;display:block;}
+.msg-dot:hover{transform:translate(-50%,-50%) scale(1.8);z-index:5;}
+.msg-dot.filtered{opacity:0.06;pointer-events:none;}
+#tl-preview{position:fixed;background:#fff;border:1px solid #e5e5ea;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.14);padding:12px 14px;max-width:260px;z-index:100;font-size:13px;pointer-events:none;}
+#tl-preview-sender{font-weight:600;margin-bottom:2px;}
+#tl-preview-time{color:#8e8e93;font-size:11px;margin-bottom:6px;}
+#tl-preview-text{color:#1c1c1e;margin-bottom:8px;line-height:1.4;}
+#tl-preview-link{color:#007aff;font-size:12px;text-decoration:none;pointer-events:auto;}
+.tl-legend{padding:12px 16px;font-size:13px;color:#8e8e93;}
+.avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;flex-shrink:0;}
+.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;}
+</style>
+</head>
+<body>
+<div id="tl-root">
+<div id="tl-slider">
+<div id="tl-track">
+<div id="tl-track-bg"></div>
+<div id="tl-fill"></div>
+<input type="range" id="tl-lo" min="0" max="10000" value="0">
+<input type="range" id="tl-hi" min="0" max="10000" value="10000">
+</div>
+<div id="tl-labels"><span id="tl-label-lo"></span><span id="tl-label-hi"></span></div>
+</div>
+<div id="tl-axis">
+<span class="tl-tick" style="left:0.00%">Jan 15</span>
+<span class="tl-tick" style="left:20.00%">Feb 09</span>
+<span class="tl-tick" style="left:40.00%">Mar 05</span>
+<span class="tl-tick" style="left:60.00%">Mar 31</span>
+<span class="tl-tick" style="left:80.00%">Apr 25</span>
+<span class="tl-tick" style="left:100.00%">May 20</span>
+</div>
+<div class="tl-lane">
+<div class="tl-lane-header"><span class="avatar" style="background:hsl(133,55%,50%)">TB</span><span>test.bob@example.com</span></div>
+<div class="tl-lane-body">
+<a class="msg-dot" id="msg-FAKE-0011" href="test-group.html#msg-FAKE-0011" data-t="1716235260" data-sender="test.bob@example.com" data-preview="group reply from bob" style="left:100.00%;background:hsl(133,55%,50%)" tabindex="0"></a>
+</div>
+</div>
+<div class="tl-lane">
+<div class="tl-lane-header"><span class="avatar" style="background:hsl(4,55%,50%)">1</span><span>+15550100001</span></div>
+<div class="tl-lane-body">
+<a class="msg-dot" id="msg-FAKE-0001" href="15550100001.html#msg-FAKE-0001" data-t="1705311000" data-sender="+15550100001" data-preview="hello from test" style="left:0.00%;background:hsl(4,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0003" href="15550100001.html#msg-FAKE-0003" data-t="1705311180" data-sender="+15550100001" data-preview="this text lives in attributedBody" style="left:0.00%;background:hsl(4,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0005" href="15550100001.html#msg-FAKE-0005" data-t="1709467200" data-sender="+15550100001" data-preview="multi
+line
+message with &amp;quot;quotes&amp;quot; &amp;amp; &amp;lt;angles&amp;gt;" style="left:38.05%;background:hsl(4,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0010" href="test-group.html#msg-FAKE-0010" data-t="1716235200" data-sender="+15550100001" data-preview="group hello from test" style="left:100.00%;background:hsl(4,55%,50%)" tabindex="0"></a>
+</div>
+</div>
+<div class="tl-lane">
+<div class="tl-lane-header"><span class="avatar" style="background:hsl(181,55%,50%)">1</span><span>+15550100002</span></div>
+<div class="tl-lane-body">
+<a class="msg-dot" id="msg-FAKE-0009" href="15550100002.html#msg-FAKE-0009" data-t="1712649600" data-sender="+15550100002" data-preview="old-style seconds timestamp" style="left:67.18%;background:hsl(181,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0007" href="15550100002.html#msg-FAKE-0007" data-t="1712736000" data-sender="+15550100002" data-preview="sms hello from test" style="left:67.97%;background:hsl(181,55%,50%)" tabindex="0"></a>
+</div>
+</div>
+<div class="tl-lane">
+<div class="tl-lane-header"><span class="avatar" style="background:hsl(87,55%,50%)">M</span><span>Me</span></div>
+<div class="tl-lane-body">
+<a class="msg-dot" id="msg-FAKE-0002" href="15550100001.html#msg-FAKE-0002" data-t="1705311130" data-sender="Me" data-preview="hi there, this is a reply from me" style="left:0.00%;background:hsl(87,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0004" href="15550100001.html#msg-FAKE-0004" data-t="1706810400" data-sender="Me" data-preview="test-photo.jpg" style="left:13.73%;background:hsl(87,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0006" href="15550100001.html#msg-FAKE-0006" data-t="1709467500" data-sender="Me" data-preview="a link: https://example.com/test-page" style="left:38.05%;background:hsl(87,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0008" href="15550100002.html#msg-FAKE-0008" data-t="1712736060" data-sender="Me" data-preview="sms reply from me" style="left:67.97%;background:hsl(87,55%,50%)" tabindex="0"></a>
+<a class="msg-dot" id="msg-FAKE-0012" href="test-group.html#msg-FAKE-0012" data-t="1716235320" data-sender="Me" data-preview="group reply from me with emoji 👋" style="left:100.00%;background:hsl(87,55%,50%)" tabindex="0"></a>
+</div>
+</div>
+<div id="tl-preview" hidden>
+<div id="tl-preview-sender"></div>
+<div id="tl-preview-time"></div>
+<div id="tl-preview-text"></div>
+<a id="tl-preview-link" href="#">Open conversation &rarr;</a>
+</div>
+<p class="tl-legend">Each dot = one message. Drag handles to zoom. &nbsp;12 messages, 4 conversations, 2024-01-15 to 2024-05-20.</p>
+<script>(function(){
+var msgs=[].slice.call(document.querySelectorAll('.msg-dot'));
+var lo=document.getElementById('tl-lo');
+var hi=document.getElementById('tl-hi');
+var fill=document.getElementById('tl-fill');
+var preview=document.getElementById('tl-preview');
+var MAX=10000;
+var tMin=1705311000;var tMax=1716235320;
+function fmtDate(ep){
+  var d=new Date(ep*1000);
+  return d.toLocaleDateString(undefined,{month:'short',year:'numeric'});
+}
+function update(){
+  var l=+lo.value,h=+hi.value;
+  if(l>=h-50){if(lo===document.activeElement){lo.value=h-50;}else{hi.value=l+50;}}
+  fill.style.left=(l/MAX*100)+'%';
+  fill.style.width=((h-l)/MAX*100)+'%';
+  var sT=tMin+(tMax-tMin)*(l/MAX);
+  var eT=tMin+(tMax-tMin)*(h/MAX);
+  msgs.forEach(function(m){
+    var t=+m.dataset.t;
+    m.classList.toggle('filtered',t<sT||t>eT);
+  });
+  document.getElementById('tl-label-lo').textContent=fmtDate(sT);
+  document.getElementById('tl-label-hi').textContent=fmtDate(eT);
+}
+lo.addEventListener('input',update);
+hi.addEventListener('input',update);
+msgs.forEach(function(m){
+  m.addEventListener('mouseenter',function(e){
+    document.getElementById('tl-preview-sender').textContent=m.dataset.sender;
+    document.getElementById('tl-preview-time').textContent=new Date(+m.dataset.t*1000).toLocaleString();
+    document.getElementById('tl-preview-text').textContent=m.dataset.preview;
+    document.getElementById('tl-preview-link').href=m.getAttribute('href');
+    preview.hidden=false;
+    var r=m.getBoundingClientRect();
+    preview.style.left=Math.min(r.left+12,window.innerWidth-280)+'px';
+    preview.style.top=Math.max(r.top-100,8)+'px';
+  });
+  m.addEventListener('mouseleave',function(){preview.hidden=true;});
+});
+update();
+})();</script>
+</div>
+</body>
+</html>

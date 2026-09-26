@@ -11,5 +11,7 @@ export/
 *.db
 *.db-wal
 *.db-shm
+# ...except the synthetic golden-test fixture (fake data, see tests/fixtures/)
+!tests/fixtures/chat.db
 
 .DS_Store

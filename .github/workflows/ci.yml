@@ -31,6 +31,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Golden-file tests (CLI output vs tests/golden)
+        run: bash tests/run_golden.sh build/imessage-exporter
+
   gui:
     name: desktop GUI (${{ matrix.os }})
     strategy:

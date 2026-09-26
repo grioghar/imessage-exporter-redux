@@ -1,0 +1,71 @@
+{
+  "guid": "iMessage;-;+15550100001",
+  "title": "+15550100001",
+  "chat_identifier": "+15550100001",
+  "display_name": "",
+  "service": "iMessage",
+  "participants": ["+15550100001"],
+  "message_count": 6,
+  "messages": [
+    {
+      "guid": "FAKE-0001",
+      "date": "2024-01-15 09:30:00",
+      "date_read": "2024-01-15 09:31:05",
+      "is_from_me": false,
+      "sender": "+15550100001",
+      "service": "iMessage",
+      "text": "hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0002",
+      "date": "2024-01-15 09:32:10",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "hi there, this is a reply from me",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0003",
+      "date": "2024-01-15 09:33:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100001",
+      "service": "iMessage",
+      "text": "this text lives in attributedBody",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0004",
+      "date": "2024-02-01 18:00:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "",
+      "attachments": [{"filename": "~/Library/Messages/Attachments/00/00/FAKE/test-photo.jpg", "mime_type": "image/jpeg", "transfer_name": "test-photo.jpg", "total_bytes": 12345, "copied_path": null}]
+    },
+    {
+      "guid": "FAKE-0005",
+      "date": "2024-03-03 12:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100001",
+      "service": "iMessage",
+      "text": "multi\nline\nmessage with \"quotes\" & <angles>",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0006",
+      "date": "2024-03-03 12:05:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "a link: https://example.com/test-page",
+      "attachments": []
+    }
+  ]
+}
