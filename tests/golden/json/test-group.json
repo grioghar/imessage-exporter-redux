@@ -1,0 +1,41 @@
+{
+  "guid": "iMessage;+;chat000000000000000001",
+  "title": "Test Group",
+  "chat_identifier": "chat000000000000000001",
+  "display_name": "Test Group",
+  "service": "iMessage",
+  "participants": ["+15550100001", "test.bob@example.com"],
+  "message_count": 3,
+  "messages": [
+    {
+      "guid": "FAKE-0010",
+      "date": "2024-05-20 20:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100001",
+      "service": "iMessage",
+      "text": "group hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0011",
+      "date": "2024-05-20 20:01:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "test.bob@example.com",
+      "service": "iMessage",
+      "text": "group reply from bob",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0012",
+      "date": "2024-05-20 20:02:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "group reply from me with emoji 👋",
+      "attachments": []
+    }
+  ]
+}

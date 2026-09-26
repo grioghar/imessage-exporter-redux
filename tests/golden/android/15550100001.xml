@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smses count="5">
+  <sms protocol="0" address="+15550100001" date="1705311000000" type="1" subject="null" body="hello from test" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-01-15 09:30:00" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1705311130000" type="2" subject="null" body="hi there, this is a reply from me" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-01-15 09:32:10" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1705311180000" type="1" subject="null" body="this text lives in attributedBody" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-01-15 09:33:00" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1709467200000" type="1" subject="null" body="multi
+line
+message with &quot;quotes&quot; &amp; &lt;angles&gt;" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-03-03 12:00:00" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1709467500000" type="2" subject="null" body="a link: https://example.com/test-page" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-03-03 12:05:00" contact_name="+15550100001" />
+</smses>

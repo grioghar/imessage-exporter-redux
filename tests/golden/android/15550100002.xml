@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smses count="3">
+  <sms protocol="0" address="+15550100002" date="1712649600000" type="1" subject="null" body="old-style seconds timestamp" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-04-09 08:00:00" contact_name="+15550100002" />
+  <sms protocol="0" address="+15550100002" date="1712736000000" type="1" subject="null" body="sms hello from test" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-04-10 08:00:00" contact_name="+15550100002" />
+  <sms protocol="0" address="+15550100002" date="1712736060000" type="2" subject="null" body="sms reply from me" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-04-10 08:01:00" contact_name="+15550100002" />
+</smses>

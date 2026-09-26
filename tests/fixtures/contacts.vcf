@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:3.0
+N:Test;Alice;;;
+FN:Alice Test
+TEL;type=CELL:+1 (555) 010-0001
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:Test;Bob;;;
+FN:Bob Test
+EMAIL;type=HOME:test.bob@example.com
+END:VCARD

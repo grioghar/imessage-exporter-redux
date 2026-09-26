@@ -1,0 +1,160 @@
+{
+  "conversations": [
+{
+  "guid": "iMessage;-;+15550100001",
+  "title": "Alice Test",
+  "chat_identifier": "+15550100001",
+  "display_name": "",
+  "service": "iMessage",
+  "participants": ["Alice Test"],
+  "message_count": 6,
+  "messages": [
+    {
+      "guid": "FAKE-0001",
+      "date": "2024-01-15 09:30:00",
+      "date_read": "2024-01-15 09:31:05",
+      "is_from_me": false,
+      "sender": "Alice Test",
+      "service": "iMessage",
+      "text": "hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0002",
+      "date": "2024-01-15 09:32:10",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "hi there, this is a reply from me",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0003",
+      "date": "2024-01-15 09:33:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "Alice Test",
+      "service": "iMessage",
+      "text": "this text lives in attributedBody",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0004",
+      "date": "2024-02-01 18:00:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "",
+      "attachments": [{"filename": "~/Library/Messages/Attachments/00/00/FAKE/test-photo.jpg", "mime_type": "image/jpeg", "transfer_name": "test-photo.jpg", "total_bytes": 12345, "copied_path": null}]
+    },
+    {
+      "guid": "FAKE-0005",
+      "date": "2024-03-03 12:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "Alice Test",
+      "service": "iMessage",
+      "text": "multi\nline\nmessage with \"quotes\" & <angles>",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0006",
+      "date": "2024-03-03 12:05:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "a link: https://example.com/test-page",
+      "attachments": []
+    }
+  ]
+}
+,
+{
+  "guid": "SMS;-;+15550100002",
+  "title": "+15550100002",
+  "chat_identifier": "+15550100002",
+  "display_name": "",
+  "service": "SMS",
+  "participants": ["+15550100002"],
+  "message_count": 3,
+  "messages": [
+    {
+      "guid": "FAKE-0009",
+      "date": "2024-04-09 08:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100002",
+      "service": "SMS",
+      "text": "old-style seconds timestamp",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0007",
+      "date": "2024-04-10 08:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "+15550100002",
+      "service": "SMS",
+      "text": "sms hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0008",
+      "date": "2024-04-10 08:01:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "SMS",
+      "text": "sms reply from me",
+      "attachments": []
+    }
+  ]
+}
+,
+{
+  "guid": "iMessage;+;chat000000000000000001",
+  "title": "Test Group",
+  "chat_identifier": "chat000000000000000001",
+  "display_name": "Test Group",
+  "service": "iMessage",
+  "participants": ["Alice Test", "Bob Test"],
+  "message_count": 3,
+  "messages": [
+    {
+      "guid": "FAKE-0010",
+      "date": "2024-05-20 20:00:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "Alice Test",
+      "service": "iMessage",
+      "text": "group hello from test",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0011",
+      "date": "2024-05-20 20:01:00",
+      "date_read": null,
+      "is_from_me": false,
+      "sender": "Bob Test",
+      "service": "iMessage",
+      "text": "group reply from bob",
+      "attachments": []
+    },
+    {
+      "guid": "FAKE-0012",
+      "date": "2024-05-20 20:02:00",
+      "date_read": null,
+      "is_from_me": true,
+      "sender": "Me",
+      "service": "iMessage",
+      "text": "group reply from me with emoji 👋",
+      "attachments": []
+    }
+  ]
+}
+
+  ]
+}

@@ -1,0 +1,15 @@
+Test Group
+Service: iMessage
+Participants: +15550100001, test.bob@example.com
+Messages: 3
+============================================================
+
+[2024-05-20 20:00:00] +15550100001:
+  group hello from test
+
+[2024-05-20 20:01:00] test.bob@example.com:
+  group reply from bob
+
+[2024-05-20 20:02:00] Me:
+  group reply from me with emoji 👋
+

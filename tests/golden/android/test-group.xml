@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smses count="3">
+  <sms protocol="0" address="+15550100001" date="1716235200000" type="1" subject="null" body="group hello from test" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-05-20 20:00:00" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1716235260000" type="1" subject="null" body="group reply from bob" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-05-20 20:01:00" contact_name="+15550100001" />
+  <sms protocol="0" address="+15550100001" date="1716235320000" type="2" subject="null" body="group reply from me with emoji 👋" toa="null" sc_toa="null" service_center="null" read="1" status="-1" locked="0" readable_date="2024-05-20 20:02:00" contact_name="+15550100001" />
+</smses>

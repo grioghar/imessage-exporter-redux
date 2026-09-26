@@ -1,0 +1,26 @@
++15550100001
+Service: iMessage
+Participants: +15550100001
+Messages: 6
+============================================================
+
+[2024-01-15 09:30:00] +15550100001:
+  hello from test
+
+[2024-01-15 09:32:10] Me:
+  hi there, this is a reply from me
+
+[2024-01-15 09:33:00] +15550100001:
+  this text lives in attributedBody
+
+[2024-02-01 18:00:00] Me:
+  <attachment: test-photo.jpg>
+
+[2024-03-03 12:00:00] +15550100001:
+  multi
+line
+message with "quotes" & <angles>
+
+[2024-03-03 12:05:00] Me:
+  a link: https://example.com/test-page
+
