@@ -154,6 +154,104 @@ choco install imessage-exporter
 
 ---
 
+## Privacy
+
+Everything below was checked against the source in this repository (`src/`,
+`include/`, `gui/`, `ios/`), not just the docs.
+
+### What it reads
+
+- **Messages database** — `~/Library/Messages/chat.db` by default, or the file
+  you pass with `--db`. It is opened **read-only and immutable**
+  (`mode=ro&immutable=1`), so the live database is never modified or locked.
+  Tables used: `message`, `handle`, `chat`, `chat_message_join`,
+  `chat_handle_join`, `attachment`, `message_attachment_join`. From `message`
+  it reads `guid`, `text`, `attributedBody`, `date`, `date_read`, `is_from_me`,
+  `handle_id` and `service`; from `attachment` only the metadata
+  (`filename`, `mime_type`, `transfer_name`, `total_bytes`).
+- **Attachment files** — the paths stored in `attachment.filename` (normally
+  under `~/Library/Messages/Attachments/`) are opened **only** with
+  `--copy-attachments` or `--embed-attachments` (or the matching desktop-app
+  options). Otherwise attachments appear in the export as names only.
+- **Contacts (optional)** — `--contacts` scans `~/Library/Application
+  Support/AddressBook/` for `*.abcddb` files (`ZABCDRECORD`,
+  `ZABCDPHONENUMBER`, `ZABCDEMAILADDRESS`); `--contacts-db` reads the
+  `.abcddb` / `.vcf` file or folder you name; `--contact-store` reads the
+  saved contacts cache described below. All are opened read-only.
+- **Device backups (optional)** — `--backup` reads `Manifest.db` and the
+  content-addressed blobs of an unencrypted iTunes/Finder backup
+  (`~/Library/Application Support/MobileSync/Backup/<UDID>/` on macOS,
+  `%APPDATA%\Apple\MobileSync\Backup\<UDID>\` on Windows, or a path you
+  give). `sms.db` (and, with `--contacts`, `AddressBook.sqlitedb`) are
+  extracted to a temporary folder `imessage-exporter-<UDID>` in the system temp
+  directory, which is deleted when the tool exits.
+- **Location data (optional)** — `--location takeout:PATH` reads a local Google
+  Takeout `Records.json`; nothing is fetched.
+
+### What it writes
+
+- **The export folder** (`--output`, default `./imessage-export`): one file per
+  conversation (`<name>.txt` / `.md` / `.json` / `.html` / `.xml`), or a single
+  `conversations.<ext>` with `--combined`; `00-statistics.html` and
+  `00-timeline.html` when requested; copied attachments in a per-conversation
+  sub-folder `<name>/` (`.<name>/` with `--hidden-attachments`); with
+  `--encrypt`, HTML is rewritten as a self-decrypting page and other formats
+  become `<file>.enc` (AES-256-GCM, key derived from your password, which is
+  never stored). The desktop app's optional media A/B comparison additionally
+  writes an `image-movie-comparison/` folder of sample re-encodes, with a
+  README saying it is safe to delete.
+- **Logs** — the CLI logs to **stderr only** (`--log-level`, `-v`); it writes no
+  log file. The desktop app appends each run's log to `imessage-exporter.log`
+  in its per-user application-data folder (`~/Library/Application Support`,
+  `%APPDATA%`, or `~/.local/share` under an `iMessage Exporter` /
+  `imessage-exporter` directory) and shows the same text in its log pane.
+- **Desktop-app state** — window settings and preferences via the platform
+  settings store (`QSettings`: plist / registry / `~/.config`); a local copy of
+  `chat.db` under `<app data>/messages/` **only** when you click "Copy Messages
+  data to a local cache"; the optional persistent contacts cache
+  `imessage-exporter/contacts.db` (handle → name/photo) under the user data
+  directory; and iCloud / Google credentials in the OS keychain (macOS
+  Keychain, Windows Credential Manager) or, on Linux, owner-only files under
+  `<app data>/secrets/`.
+- **Temporary files** — only the backup-extraction folder above (removed on
+  exit) and, when the desktop app downloads an update, the installer in the
+  system temp folder.
+- **Helper processes** — on macOS HEIC attachments are converted with the
+  system `sips` tool; the media comparison shells out to `ffmpeg` if it is on
+  `PATH`. Both run locally on files inside the export folder.
+
+### Does anything leave the machine?
+
+**CLI, Docker image, C library and iOS bridge: no.** The engine (`imsg_core`,
+`imsg_db`), the `imessage-exporter` binary and `imsg_bridge` contain no network
+code at all — no sockets, HTTP client, telemetry, analytics, update check or
+crash reporter (checked with a grep over `src/`, `include/` and `ios/`). A CLI
+export can run on an air-gapped machine.
+
+**Exported HTML, when you open it in a browser**, may itself load third-party
+resources for links that appear in your messages: favicons from
+`https://www.google.com/s2/favicons?domain=<host>` for link cards, YouTube
+thumbnails from `i.ytimg.com`, and YouTube / Spotify / Vimeo embed iframes.
+Those requests are made by your browser at viewing time (revealing the linked
+hosts, not your message text); the exporter itself fetches nothing. TXT, JSON,
+Markdown and Android XML exports reference no remote resources.
+
+**Desktop app (Qt GUI): yes, but only for the features below, and none of
+them ever sends your messages except Google Drive upload.**
+
+| Feature | When | What is contacted / sent |
+|---|---|---|
+| Update check | On launch, default **on** (Help → "Automatically check for updates" to disable; "Check now" to run manually) | `GET https://api.github.com/repos/grioghar/imessage-exporter-redux/releases/latest`. No data about you or your messages is sent; the installer is downloaded only if you click Install. |
+| iCloud Contacts import | Only when you click "Import iCloud Contacts" | CardDAV requests to `contacts.icloud.com` with your Apple ID and an app-specific password; contacts are saved locally. |
+| Google Contacts | Only after you connect it | OAuth via `accounts.google.com` / `oauth2.googleapis.com`, then `people.googleapis.com` with the read-only `contacts.readonly` scope. |
+| Google Drive upload | Only with "Upload export to Drive when finished" checked | Uploads the **entire export folder** (messages and attachments) to your Drive via `www.googleapis.com/drive/v3` (`drive.file` scope). This is the one feature that sends message content off the machine. |
+| Rich link previews | Only with "Rich link previews (online)" checked (default **off**) | Fetches each URL found in your messages (page HTML plus its Open Graph image) so the card can be embedded; the sites you linked see the request. |
+| Help menu | On click | Opens this README / the issue tracker in your browser. |
+
+There is no telemetry, analytics or crash reporting in any front-end.
+
+---
+
 ## Disclaimer
 
 This tool is for exporting **your own** message data. Respect the privacy of the
