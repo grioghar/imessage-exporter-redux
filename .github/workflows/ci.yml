@@ -57,7 +57,7 @@ jobs:
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.8.*'  # 6.8.4+ no longer links the AGL framework, which Apple removed from the macOS 26 SDK (QTBUG-137687)
           cache: true
 
       - name: Configure
