@@ -6,7 +6,7 @@ name: package
 #
 # Artifacts are UNSIGNED: macOS Gatekeeper and Windows SmartScreen will warn
 # until code signing / notarization (Apple Developer ID / a Windows cert) are
-# configured — see CLAUDE.md.
+# configured — see docs/CLAUDE.md.
 on:
   workflow_dispatch:
   push:

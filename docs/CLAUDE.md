@@ -1,6 +1,8 @@
 # CLAUDE.md — imessage-exporter
 
 Context for Claude Code (and humans) working in this repo. Read this first.
+Lives in `docs/` (alongside `docs/HANDOFF.md`, the running project state);
+point tooling that expects a root-level `CLAUDE.md` at `docs/CLAUDE.md`.
 
 ## What this is
 
@@ -53,7 +55,11 @@ macos-rdp-server repo is an unrelated C/FreeRDP project — none of its code is 
 │   └── icloud_contacts.*# CardDAV contacts fetch (Qt Network, app-specific pw)
 ├── man/imessage-exporter.1  # CLI man page (installed to share/man/man1)
 ├── tests/test_core.cpp  # dependency-free unit tests
+├── tests/run_golden.sh  # golden-file tests (CLI output vs tests/golden/)
+├── tests/fixtures/      # synthetic chat.db (fake data) + generator script
 ├── docs/SCHEMA.md       # database schema notes & quirks — READ THIS
+├── docs/CLAUDE.md       # this file
+├── docs/HANDOFF.md      # running project state / how to continue
 ├── CMakeLists.txt
 ├── README.md
 └── LICENSE              # MIT

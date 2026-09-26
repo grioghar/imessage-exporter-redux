@@ -3,7 +3,7 @@
 Detailed notes so any agent (including a local model run via **ollama**) can pick
 up where the last session left off **without re-reading the whole history**.
 Keep this file CURRENT: update the "Status" and "In flight / next" sections at
-the end of every working session. `CLAUDE.md` is the deeper architecture guide;
+the end of every working session. `docs/CLAUDE.md` is the deeper architecture guide;
 this file is the running state + how-to-continue.
 
 ## ⏩ LIVE HANDOFF (read me first)
