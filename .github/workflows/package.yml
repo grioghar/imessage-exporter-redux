@@ -22,7 +22,7 @@ jobs:
           submodules: true  # top-level only — pulls lightpress, NOT its ffmpeg submodule
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.9.*'  # >= 6.9.2: no AGL link (QTBUG-137687); macOS 26 SDK removed AGL
           cache: true
       - name: Build
         run: |
@@ -89,7 +89,7 @@ jobs:
         run: vcpkg install sqlite3:x64-windows
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.9.*'  # same Qt as the macOS job and ci.yml
           cache: true
       - name: Install Inno Setup + ImageMagick
         run: |
@@ -137,7 +137,7 @@ jobs:
           sudo apt-get install -y libsqlite3-dev libgl1-mesa-dev librsvg2-bin file
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.9.*'  # same Qt as the macOS job and ci.yml
           cache: true
       - name: Build
         run: |
